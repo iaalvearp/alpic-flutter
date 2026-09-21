@@ -5,6 +5,7 @@ import '../app/theme_controller.dart';
 import '../config/app_settings.dart';
 import '../models/image_record.dart';
 import '../repositories/image_repository.dart';
+import '../repositories/weather_repository.dart';
 import '../services/image_picker_service.dart';
 import '../services/location_service.dart';
 import '../services/prepared_image_library.dart';
@@ -22,6 +23,8 @@ class HomeScreen extends StatefulWidget {
     this.startupMessage,
     this.imageRepository,
     this.authenticatedUserId,
+    this.authenticatedUserRole,
+    this.weatherRepository,
     super.key,
   });
 
@@ -32,6 +35,8 @@ class HomeScreen extends StatefulWidget {
   final String? startupMessage;
   final ImageRepository? imageRepository;
   final String? authenticatedUserId;
+  final String? authenticatedUserRole;
+  final ImageWeatherRepository? weatherRepository;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -211,7 +216,9 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => ImageListScreen(
           library: _imageLibrary,
           imageRepository: widget.imageRepository,
+          weatherRepository: widget.weatherRepository,
           authenticatedUserId: widget.authenticatedUserId,
+          authenticatedUserRole: widget.authenticatedUserRole,
           loadFailed: _imageLoadFailed,
         ),
       ),

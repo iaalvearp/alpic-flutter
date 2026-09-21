@@ -141,6 +141,42 @@ class ImageRecord {
     );
   }
 
+  factory ImageRecord.fromApiJson(
+    Map<String, dynamic> json, {
+    XFile? localFile,
+    String? localPath,
+    ImageUploadStatus uploadStatus = ImageUploadStatus.uploaded,
+  }) {
+    return ImageRecord(
+      id: json['id'] as String?,
+      ownerId: json['ownerId'] as String?,
+      name: json['name'] as String,
+      src: json['src'] as String?,
+      storagePath: json['storagePath'] as String?,
+      alt: json['alt'] as String,
+      description: json['description'] as String,
+      mimeType: json['mimeType'] as String,
+      extension: json['extension'] as String,
+      sizeBytes: (json['sizeBytes'] as num).toInt(),
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      mapsUrl: json['mapsUrl'] as String?,
+      source: ImageRecordSource.values.firstWhere(
+        (source) => source.jsonValue == json['source'],
+      ),
+      originalFilename: json['originalFilename'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String).toUtc(),
+      updatedAt: DateTime.parse(json['updatedAt'] as String).toUtc(),
+      localPath: localPath,
+      localFile: localFile,
+      uploadStatus: uploadStatus,
+      isVisible: json['isVisible'] as bool? ?? true,
+      deletedAt: json['deletedAt'] == null
+          ? null
+          : DateTime.parse(json['deletedAt'] as String).toUtc(),
+    );
+  }
+
   Map<String, Object?> toMap() {
     return {
       'id': id,

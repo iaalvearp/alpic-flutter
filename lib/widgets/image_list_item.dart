@@ -9,6 +9,7 @@ class ImageListItem extends StatelessWidget {
     this.onTap,
     this.onRetry,
     this.onDelete,
+    this.onWeather,
     super.key,
   });
 
@@ -16,6 +17,7 @@ class ImageListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onRetry;
   final VoidCallback? onDelete;
+  final VoidCallback? onWeather;
 
   String get _statusText => switch (image.uploadStatus) {
     ImageUploadStatus.pending ||
@@ -53,16 +55,27 @@ class ImageListItem extends StatelessWidget {
                 onPressed: onRetry,
                 icon: const Icon(Icons.cloud_upload_outlined),
               )
-            : onDelete != null
+            : onDelete != null || onWeather != null
             ? PopupMenuButton<String>(
                 tooltip: 'Acciones de imagen',
                 onSelected: (action) {
                   if (action == 'edit') onTap?.call();
                   if (action == 'delete') onDelete?.call();
+                  if (action == 'weather') onWeather?.call();
                 },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Editar')),
-                  PopupMenuItem(value: 'delete', child: Text('Quitar imagen')),
+                itemBuilder: (context) => [
+                  if (onTap != null)
+                    const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                  if (onDelete != null)
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Quitar imagen'),
+                    ),
+                  if (onWeather != null)
+                    const PopupMenuItem(
+                      value: 'weather',
+                      child: Text('Consultar clima'),
+                    ),
                 ],
               )
             : const Icon(Icons.chevron_right),

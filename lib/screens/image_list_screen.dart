@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/image_record.dart';
 import '../repositories/image_repository.dart';
+import '../repositories/weather_repository.dart';
+import '../models/image_weather.dart';
 import '../services/prepared_image_library.dart';
 import '../widgets/image_list_item.dart';
 import 'image_form_screen.dart';
@@ -12,6 +14,8 @@ class ImageListScreen extends StatefulWidget {
     required this.imageRepository,
     required this.authenticatedUserId,
     this.loadFailed = false,
+    this.weatherRepository,
+    this.authenticatedUserRole,
     super.key,
   });
 
@@ -19,6 +23,8 @@ class ImageListScreen extends StatefulWidget {
   final ImageRepository? imageRepository;
   final String? authenticatedUserId;
   final bool loadFailed;
+  final ImageWeatherRepository? weatherRepository;
+  final String? authenticatedUserRole;
 
   @override
   State<ImageListScreen> createState() => _ImageListScreenState();
@@ -28,8 +34,9 @@ class _ImageListScreenState extends State<ImageListScreen> {
   bool _canManage(ImageRecord image) {
     if (image.uploadStatus != ImageUploadStatus.uploaded) return true;
     return image.isVisible &&
-        widget.authenticatedUserId != null &&
-        image.ownerId == widget.authenticatedUserId;
+        (widget.authenticatedUserRole == 'ADMIN' ||
+            (widget.authenticatedUserId != null &&
+                image.ownerId == widget.authenticatedUserId));
   }
 
   Future<void> _edit(BuildContext context, ImageRecord image) async {
@@ -82,6 +89,24 @@ class _ImageListScreenState extends State<ImageListScreen> {
         _showMessage(
           'No fue posible subir la imagen. Puedes intentarlo nuevamente.',
         );
+      }
+    }
+  }
+
+  Future<void> _showWeather(ImageRecord image) async {
+    final repository = widget.weatherRepository;
+    if (repository == null || image.id == null) return;
+
+    try {
+      final weather = await repository.loadForImage(image.id!);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _WeatherDialog(weather: weather),
+      );
+    } catch (_) {
+      if (mounted) {
+        _showMessage('No fue posible consultar el clima de la imagen.');
       }
     }
   }
@@ -169,11 +194,56 @@ class _ImageListScreenState extends State<ImageListScreen> {
                         image.uploadStatus == ImageUploadStatus.uploaded
                     ? () => _confirmSoftDelete(image)
                     : null,
+                onWeather: widget.weatherRepository == null
+                    ? null
+                    : () => _showWeather(image),
               );
             },
           );
         },
       ),
+    );
+  }
+}
+
+class _WeatherDialog extends StatelessWidget {
+  const _WeatherDialog({required this.weather});
+
+  final ImageWeather weather;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Clima de la imagen'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Proveedor: ${weather.provider}'),
+          Text('Hora: ${weather.observedAt} (${weather.timezone})'),
+          const SizedBox(height: 12),
+          Text(
+            'Temperatura: ${weather.temperature.value} ${weather.temperature.unit}',
+          ),
+          Text(
+            'Sensación: ${weather.apparentTemperature.value} ${weather.apparentTemperature.unit}',
+          ),
+          Text(
+            'Humedad: ${weather.relativeHumidity.value} ${weather.relativeHumidity.unit}',
+          ),
+          Text(
+            'Precipitación: ${weather.precipitation.value} ${weather.precipitation.unit}',
+          ),
+          Text('Viento: ${weather.windSpeed.value} ${weather.windSpeed.unit}'),
+          Text('Código meteorológico: ${weather.weatherCode}'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }
