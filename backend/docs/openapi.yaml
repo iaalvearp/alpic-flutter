@@ -1,0 +1,822 @@
+openapi: 3.1.0
+info:
+  title: AlPics API
+  version: 0.1.0
+  description: |
+    REST API for AlPics - a photo management application with GPS metadata and weather data.
+
+    ## Authentication
+    Most endpoints require a Bearer token obtained via `/api/auth/login` or `/api/auth/register`.
+    Include the token in the `Authorization` header: `Bearer <token>`.
+
+    ## Roles
+    - **USER**: Can manage only their own images.
+    - **ADMIN**: Can view and manage all images.
+
+    ## Error Format
+    All errors return a consistent JSON structure:
+    ```json
+    {
+      "error": {
+        "code": "ERROR_CODE",
+        "message": "Human-readable message"
+      }
+    }
+    ```
+  contact:
+    name: AlPics API Support
+  license:
+    name: Private
+
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Service health checks
+  - name: Authentication
+    description: User registration, login and session
+  - name: Images
+    description: Image CRUD operations
+  - name: Weather
+    description: Weather data for images
+  - name: Admin
+    description: Administrative endpoints (ADMIN role required)
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service status, environment, and uptime.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      description: |
+        Creates a new user account and returns a JWT session.
+        The user role is set to USER by default.
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            examples:
+              valid:
+                summary: Valid registration
+                value:
+                  email: user@example.com
+                  password: securePassword123
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingEmail:
+                  summary: Email is required
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: email is required
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: email is invalid
+                shortPassword:
+                  summary: Password too short
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: password must contain between 8 and 256 characters
+                malformedBody:
+                  summary: Malformed JSON body
+                  value:
+                    error:
+                      code: INVALID_REQUEST
+                      message: Request body is not valid JSON
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with credentials
+      description: Authenticates a user and returns a JWT session token.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            examples:
+              valid:
+                summary: Valid login
+                value:
+                  email: user@example.com
+                  password: securePassword123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: INVALID_CREDENTIALS
+                  message: Invalid credentials
+
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user profile
+      description: Returns the authenticated user's profile information.
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noToken:
+                  summary: No token provided
+                  value:
+                    error:
+                      code: UNAUTHORIZED
+                      message: A Bearer token is required
+                invalidToken:
+                  summary: Invalid or expired token
+                  value:
+                    error:
+                      code: INVALID_TOKEN
+                      message: Invalid or expired token
+
+  /api/images:
+    post:
+      tags: [Images]
+      summary: Upload a new image
+      description: |
+        Creates a new image record and uploads the file to Supabase Storage.
+        Requires multipart/form-data with a `file` field and metadata fields.
+      operationId: createImage
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, name, alt, description, source]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (max 10MB)
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Image name
+                  example: Sunset at the beach
+                alt:
+                  type: string
+                  maxLength: 255
+                  description: Alternative text for accessibility
+                  example: Beautiful sunset over the Pacific
+                description:
+                  type: string
+                  maxLength: 5000
+                  description: Image description
+                  example: Photo taken during my trip to Ecuador
+                source:
+                  type: string
+                  enum: [camera, gallery]
+                  description: Image source
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                  description: GPS latitude (must be provided with longitude)
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                  description: GPS longitude (must be provided with latitude)
+                mapsUrl:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+                  description: Google Maps or similar URL
+                  example: https://maps.google.com/?q=-0.18,-78.48
+      responses:
+        '201':
+          description: Image created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noFile:
+                  summary: No file provided
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: file is required
+                invalidMime:
+                  summary: Unsupported image type
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: file must be a supported image
+                invalidExtension:
+                  summary: Invalid file extension
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: file must have a valid extension
+                missingCoords:
+                  summary: Latitude without longitude
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: latitude and longitude must be provided together
+                invalidLat:
+                  summary: Latitude out of range
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: latitude must be between -90 and 90
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UPLOAD_TOO_LARGE
+                  message: Image file is too large
+
+    get:
+      tags: [Images]
+      summary: List user's images
+      description: |
+        Returns all visible images for the authenticated user.
+        ADMIN users can see all images.
+      operationId: listImages
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of images
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ImageResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/images/{id}:
+    get:
+      tags: [Images]
+      summary: Get image by ID
+      description: |
+        Returns a single image by its UUID.
+        Users can only access their own images; ADMIN can access any image.
+      operationId: getImageById
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ImagePathId'
+      responses:
+        '200':
+          description: Image details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: id must be a valid UUID
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found or not owned by user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: IMAGE_NOT_FOUND
+                  message: Image not found
+
+    put:
+      tags: [Images]
+      summary: Update image metadata
+      description: |
+        Updates the name, alt text, and description of an image.
+        Users can only update their own images; ADMIN can update any image.
+      operationId: updateImage
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ImagePathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateImage'
+            example:
+              name: Updated sunset photo
+              alt: Beautiful sunset at the beach
+              description: Updated description for the photo
+      responses:
+        '200':
+          description: Image updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found or not owned by user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Images]
+      summary: Soft delete an image
+      description: |
+        Performs a soft delete (marks as deleted, does not remove from storage).
+        Users can only delete their own images; ADMIN can delete any image.
+      operationId: deleteImage
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ImagePathId'
+      responses:
+        '200':
+          description: Image deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      deleted:
+                        type: boolean
+                        example: true
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found or not owned by user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/images/{id}/weather:
+    get:
+      tags: [Weather]
+      summary: Get weather for image location
+      description: |
+        Returns current weather data from Open-Meteo for the image's GPS coordinates.
+        The image must have latitude and longitude set.
+      operationId: getImageWeather
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ImagePathId'
+      responses:
+        '200':
+          description: Weather data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherResponse'
+        '400':
+          description: Image has no coordinates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: IMAGE_COORDINATES_REQUIRED
+                  message: Image has no geographic coordinates
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Image not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/admin/images:
+    get:
+      tags: [Admin]
+      summary: List all images (admin only)
+      description: |
+        Returns all visible images across all users.
+        Requires ADMIN role.
+      operationId: adminListImages
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of all images
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ImageResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permissions (not ADMIN)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Insufficient permissions
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/auth/login or /api/auth/register
+
+  parameters:
+    PathImageId:
+      name: id
+      in: path
+      required: true
+      description: Image UUID (v1-v8)
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      example: 11111111-1111-4111-8111-111111111111
+
+  schemas:
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          description: User email (will be normalized to lowercase)
+          example: user@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 256
+          description: User password (min 8 characters)
+          example: securePassword123
+
+    UserResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: User ID
+            email:
+              type: string
+              format: email
+              description: User email
+            createdAt:
+              type: string
+              nullable: true
+              description: Account creation date (ISO 8601)
+            role:
+              type: string
+              enum: [USER, ADMIN]
+              description: User role
+
+    AuthSessionResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/UserResponse'
+            accessToken:
+              type: string
+              description: JWT access token
+            tokenType:
+              type: string
+              enum: [Bearer]
+              description: Token type
+            expiresAt:
+              type: number
+              nullable: true
+              description: Token expiration timestamp (Unix)
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+          example: alpic-backend
+        environment:
+          type: string
+          example: development
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+          description: Uptime in seconds
+
+    ImageResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            ownerId:
+              type: string
+              format: uuid
+            name:
+              type: string
+            src:
+              type: string
+              nullable: true
+              description: Public URL of the image
+            storagePath:
+              type: string
+              nullable: true
+              description: Storage path in Supabase
+            alt:
+              type: string
+            description:
+              type: string
+            mimeType:
+              type: string
+              example: image/png
+            extension:
+              type: string
+              example: png
+            sizeBytes:
+              type: integer
+              description: File size in bytes
+            latitude:
+              type: number
+              nullable: true
+              minimum: -90
+              maximum: 90
+            longitude:
+              type: number
+              nullable: true
+              minimum: -180
+              maximum: 180
+            mapsUrl:
+              type: string
+              nullable: true
+              format: uri
+            source:
+              type: string
+              enum: [camera, gallery]
+            originalFilename:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            isVisible:
+              type: boolean
+            deletedAt:
+              type: string
+              nullable: true
+              format: date-time
+
+    UpdateImage:
+      type: object
+      required: [name, alt, description]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          example: Updated image name
+        alt:
+          type: string
+          maxLength: 255
+          example: Updated alt text
+        description:
+          type: string
+          maxLength: 5000
+          example: Updated description
+
+    WeatherResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            imageId:
+              type: string
+              format: uuid
+            provider:
+              type: string
+              enum: [open-meteo]
+            coordinates:
+              type: object
+              properties:
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+            providerCoordinates:
+              type: object
+              properties:
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+            timezone:
+              type: string
+              example: America/Guayaquil
+            observedAt:
+              type: string
+              example: 2026-09-21T12:00
+            current:
+              type: object
+              properties:
+                temperature:
+                  $ref: '#/components/schemas/WeatherMeasurement'
+                apparentTemperature:
+                  $ref: '#/components/schemas/WeatherMeasurement'
+                relativeHumidity:
+                  $ref: '#/components/schemas/WeatherMeasurement'
+                precipitation:
+                  $ref: '#/components/schemas/WeatherMeasurement'
+                windSpeed:
+                  $ref: '#/components/schemas/WeatherMeasurement'
+                weatherCode:
+                  type: integer
+                  description: WMO weather code
+                isDay:
+                  type: boolean
+
+    WeatherMeasurement:
+      type: object
+      properties:
+        value:
+          type: number
+        unit:
+          type: string
+          example: °C
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: email is required

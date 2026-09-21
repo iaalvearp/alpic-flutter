@@ -1,0 +1,861 @@
+{
+  "info": {
+    "name": "AlPics API",
+    "description": "Complete API collection for AlPics - Photo management with GPS metadata and weather data.\n\n## Flow\n1. Register a new user\n2. Login to get JWT\n3. Use JWT for CRUD operations\n4. Test authorization (USER vs ADMIN)\n5. Test external API (weather)\n6. Test error cases",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3000"
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "createdImageId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Returns service status, environment, and uptime."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "POST /api/auth/register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Response has user and token', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('user');",
+                  "  pm.expect(json.data).to.have.property('accessToken');",
+                  "  pm.expect(json.data.tokenType).to.eql('Bearer');",
+                  "});",
+                  "pm.test('Password is not exposed', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.user).to.not.have.property('password');",
+                  "});",
+                  "// Save token for subsequent requests",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('userToken', pm.response.json().data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@example.com\",\n  \"password\": \"securePassword123\"\n}"
+            },
+            "description": "Register a new user account. Returns JWT session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response has accessToken', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('accessToken');",
+                  "  pm.expect(json.data.accessToken).to.be.a('string');",
+                  "});",
+                  "// Save token for subsequent requests",
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('userToken', pm.response.json().data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@example.com\",\n  \"password\": \"securePassword123\"\n}"
+            },
+            "description": "Login with credentials. Returns JWT token."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/auth/me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response has user info', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('id');",
+                  "  pm.expect(json.data).to.have.property('email');",
+                  "  pm.expect(json.data).to.have.property('role');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Returns the authenticated user's profile."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "item": [
+        {
+          "name": "POST /api/images (Create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Response has image data', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('id');",
+                  "  pm.expect(json.data).to.have.property('name');",
+                  "  pm.expect(json.data).to.have.property('src');",
+                  "});",
+                  "// Save image ID for subsequent requests",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('createdImageId', pm.response.json().data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "name",
+                  "value": "Test Image",
+                  "type": "text"
+                },
+                {
+                  "key": "alt",
+                  "value": "Test alt text",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Test description for the image",
+                  "type": "text"
+                },
+                {
+                  "key": "source",
+                  "value": "gallery",
+                  "type": "text"
+                },
+                {
+                  "key": "latitude",
+                  "value": "-0.18",
+                  "type": "text"
+                },
+                {
+                  "key": "longitude",
+                  "value": "-78.48",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Upload a new image with metadata. Requires multipart/form-data."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/images (List)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is an array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "List all visible images for the authenticated user."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/images/:id (Get One)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response has image data', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('id');",
+                  "  pm.expect(json.data.id).to.eql(pm.collectionVariables.get('createdImageId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{createdImageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "{{createdImageId}}"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Get a single image by ID."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/images/:id (Update)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name was updated', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.name).to.eql('Updated Image Name');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{createdImageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "{{createdImageId}}"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Image Name\",\n  \"alt\": \"Updated alt text\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "description": "Update image metadata (name, alt, description)."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/images/:id (Soft Delete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Image deleted', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data.deleted).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{createdImageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "{{createdImageId}}"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Soft delete an image (marks as deleted)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Weather",
+      "item": [
+        {
+          "name": "GET /api/images/:id/weather",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response has weather data', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.have.property('provider', 'open-meteo');",
+                  "  pm.expect(json.data).to.have.property('current');",
+                  "  pm.expect(json.data.current).to.have.property('temperature');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{createdImageId}}/weather",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "{{createdImageId}}", "weather"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Get current weather data for image GPS coordinates."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "GET /api/admin/images (Admin Only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is an array', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "images"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "description": "List all images across all users. Requires ADMIN role."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error Tests",
+      "item": [
+        {
+          "name": "POST /api/auth/register - Missing Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code is VALIDATION_ERROR', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"\",\n  \"password\": \"securePassword123\"\n}"
+            },
+            "description": "Test validation: empty email should return 400."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/register - Short Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code is VALIDATION_ERROR', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"123\"\n}"
+            },
+            "description": "Test validation: password < 8 chars should return 400."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/login - Invalid Credentials",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error code is INVALID_CREDENTIALS', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('INVALID_CREDENTIALS');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nonexistent@example.com\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "description": "Test authentication: wrong password should return 401."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/auth/me - No Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error code is UNAUTHORIZED', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('UNAUTHORIZED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Test auth: missing token should return 401."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/auth/me - Invalid Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error code is INVALID_TOKEN', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('INVALID_TOKEN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid-token-abc123"
+              }
+            ],
+            "description": "Test auth: invalid token should return 401."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/images - No Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Error code is UNAUTHORIZED', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('UNAUTHORIZED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images"]
+            },
+            "description": "Test auth: protected endpoint without token should return 401."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/images/not-a-uuid - Invalid ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code is VALIDATION_ERROR', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "not-a-uuid"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Test validation: invalid UUID should return 400."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/images/:id - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Error code is IMAGE_NOT_FOUND', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('IMAGE_NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/images/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images", "00000000-0000-0000-0000-000000000000"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "description": "Test not found: non-existent image should return 404."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/images - No File",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code is VALIDATION_ERROR', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "images"]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "Image without file",
+                  "type": "text"
+                },
+                {
+                  "key": "alt",
+                  "value": "Alt",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Description",
+                  "type": "text"
+                },
+                {
+                  "key": "source",
+                  "value": "gallery",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Test validation: missing file should return 400."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/auth/register - Malformed JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code is INVALID_REQUEST', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.error.code).to.eql('INVALID_REQUEST');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "not valid json"
+            },
+            "description": "Test error handling: malformed JSON should return 400."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
