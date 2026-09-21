@@ -1,52 +1,40 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/alpics_app.dart';
-import 'config/supabase_config.dart';
-import 'repositories/image_repository.dart';
-import 'services/auth_service.dart';
-import 'services/image_remote_gateway.dart';
+import 'config/api_config.dart';
+import 'models/auth_session.dart';
+import 'repositories/rest_image_repository.dart';
+import 'repositories/weather_repository.dart';
+import 'services/api_auth_service.dart';
+import 'services/api_client.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? startupMessage;
-  String? authenticatedUserId;
-  ImageRepository? imageRepository;
+  final apiClient = ApiClient(baseUrl: ApiConfig.baseUrl);
+  final authService = ApiAuthService(apiClient);
+  AuthSession? session;
   try {
-    await Supabase.initialize(
-      url: SupabaseConfig.projectUrl,
-      publishableKey: SupabaseConfig.publishableKey,
-    );
-    debugPrint('Supabase initialized');
-    final authenticatedImageRepository = SupabaseImageRepository(
-      SupabaseImageRemoteGateway(Supabase.instance.client),
-    );
-
-    final authDiagnostic = await AuthService(
-      Supabase.instance.client,
-    ).ensureAnonymousSession();
-    if (authDiagnostic.state == AuthDiagnosticState.error) {
-      startupMessage =
-          'No pudimos conectarnos en este momento. Puedes seguir usando la aplicación.';
-    } else {
-      authenticatedUserId = authDiagnostic.userId;
-      imageRepository = authenticatedImageRepository;
-    }
+    session = await authService.restoreSession();
+  } on ApiException catch (error) {
+    debugPrint('REST session restore failed: $error');
+    startupMessage = 'No pudimos validar tu sesión. Inicia sesión nuevamente.';
   } catch (error, stackTrace) {
-    debugPrint(
-      'Authentication failure: Supabase initialization failed: $error',
-    );
+    debugPrint('REST initialization failed: $error');
     debugPrint('Stack trace: $stackTrace');
-    startupMessage =
-        'No pudimos conectarnos en este momento. Puedes seguir usando la aplicación.';
+    startupMessage = 'No pudimos conectarnos en este momento.';
   }
 
   runApp(
     AlPicsApp(
+      authService: authService,
       startupMessage: startupMessage,
-      imageRepository: imageRepository,
-      authenticatedUserId: authenticatedUserId,
+      initialSession: session,
+      imageRepository: RestImageRepository(apiClient),
+      weatherRepository: RestImageWeatherRepository(apiClient),
+      authenticatedUserId: session?.user.id,
+      authenticatedUserRole: session?.user.role,
     ),
   );
 }
