@@ -66,6 +66,8 @@ class ImageRecord {
         originalFilename == other.originalFilename;
   }
 
+  static const Object _unset = Object();
+
   ImageRecord copyWith({
     String? id,
     String? ownerId,
@@ -78,6 +80,9 @@ class ImageRecord {
     bool? isVisible,
     DateTime? deletedAt,
     DateTime? updatedAt,
+    Object? latitude = _unset,
+    Object? longitude = _unset,
+    Object? mapsUrl = _unset,
   }) {
     return ImageRecord(
       id: id ?? this.id,
@@ -93,9 +98,13 @@ class ImageRecord {
       mimeType: mimeType,
       extension: extension,
       sizeBytes: sizeBytes,
-      latitude: latitude,
-      longitude: longitude,
-      mapsUrl: mapsUrl,
+      latitude: identical(latitude, _unset)
+          ? this.latitude
+          : latitude as double?,
+      longitude: identical(longitude, _unset)
+          ? this.longitude
+          : longitude as double?,
+      mapsUrl: identical(mapsUrl, _unset) ? this.mapsUrl : mapsUrl as String?,
       source: source,
       localPath: localPath,
       localFile: localFile,

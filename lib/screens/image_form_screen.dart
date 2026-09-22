@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../models/image_record.dart';
+import '../services/location_service.dart';
 import '../utils/image_name_generator.dart';
 import '../widgets/image_preview.dart';
 
 enum ImageFormMode { create, edit }
 
 class ImageFormScreen extends StatefulWidget {
-  const ImageFormScreen({required this.record, required this.mode, super.key});
+  const ImageFormScreen({
+    required this.record,
+    required this.mode,
+    this.locationService,
+    super.key,
+  });
 
   final ImageRecord record;
   final ImageFormMode mode;
+  final LocationService? locationService;
 
   @override
   State<ImageFormScreen> createState() => _ImageFormScreenState();
@@ -23,6 +30,10 @@ class _ImageFormScreenState extends State<ImageFormScreen> {
   late final TextEditingController _descriptionController;
   late bool _altWasEdited;
   late bool _descriptionWasEdited;
+  late double? _latitude;
+  late double? _longitude;
+  late String? _mapsUrl;
+  bool _isCapturingLocation = false;
 
   @override
   void initState() {
@@ -36,6 +47,9 @@ class _ImageFormScreenState extends State<ImageFormScreen> {
     _descriptionWasEdited =
         widget.record.description !=
         generateDefaultDescription(widget.record.name);
+    _latitude = widget.record.latitude;
+    _longitude = widget.record.longitude;
+    _mapsUrl = widget.record.mapsUrl;
   }
 
   @override
@@ -67,8 +81,51 @@ class _ImageFormScreenState extends State<ImageFormScreen> {
         alt: _altController.text.trim(),
         description: _descriptionController.text.trim(),
         updatedAt: DateTime.now().toUtc(),
+        latitude: _latitude,
+        longitude: _longitude,
+        mapsUrl: _mapsUrl,
       ),
     );
+  }
+
+  Future<void> _captureLocation() async {
+    final service = widget.locationService;
+    if (service == null || _isCapturingLocation) return;
+
+    setState(() => _isCapturingLocation = true);
+    try {
+      final result = await service.checkAndRequestAccess();
+      if (!mounted) return;
+      if (result.status == LocationAccessStatus.granted &&
+          result.position != null) {
+        setState(() {
+          _latitude = result.position!.latitude;
+          _longitude = result.position!.longitude;
+          _mapsUrl =
+              'https://www.google.com/maps?q=$_latitude,$_longitude';
+        });
+      } else {
+        _showMessage(
+          'No se pudo obtener la ubicación. Verifica que el GPS esté encendido.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCapturingLocation = false);
+    }
+  }
+
+  void _removeLocation() {
+    setState(() {
+      _latitude = null;
+      _longitude = null;
+      _mapsUrl = null;
+    });
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _friendlyFileSize(int bytes) {
@@ -137,6 +194,16 @@ class _ImageFormScreenState extends State<ImageFormScreen> {
                   'Tamaño: ${_friendlyFileSize(widget.record.sizeBytes)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                const SizedBox(height: 16),
+                _LocationSection(
+                  latitude: _latitude,
+                  longitude: _longitude,
+                  mapsUrl: _mapsUrl,
+                  isCapturing: _isCapturingLocation,
+                  canRequestLocation: widget.locationService != null,
+                  onCapture: _captureLocation,
+                  onRemove: _removeLocation,
+                ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _save,
@@ -150,6 +217,101 @@ class _ImageFormScreenState extends State<ImageFormScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationSection extends StatelessWidget {
+  const _LocationSection({
+    required this.latitude,
+    required this.longitude,
+    required this.mapsUrl,
+    required this.isCapturing,
+    required this.canRequestLocation,
+    required this.onCapture,
+    required this.onRemove,
+  });
+
+  final double? latitude;
+  final double? longitude;
+  final String? mapsUrl;
+  final bool isCapturing;
+  final bool canRequestLocation;
+  final VoidCallback onCapture;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLocation = latitude != null && longitude != null;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      key: const Key('seccion-ubicacion'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 20,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Ubicación',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (isCapturing)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (hasLocation) ...[
+              Text(
+                '${latitude!.toStringAsFixed(5)}, ${longitude!.toStringAsFixed(5)}',
+                key: const Key('ubicacion-coordenadas'),
+              ),
+              if (mapsUrl != null)
+                Text(
+                  mapsUrl!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('quitar-ubicacion'),
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Quitar ubicación'),
+              ),
+            ] else if (canRequestLocation) ...[
+              Text(
+                'Sin ubicación.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('capturar-ubicacion'),
+                onPressed: onCapture,
+                icon: const Icon(Icons.my_location, size: 18),
+                label: const Text('Obtener ubicación'),
+              ),
+            ] else
+              Text(
+                'La imagen se guardará sin ubicación.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+          ],
         ),
       ),
     );

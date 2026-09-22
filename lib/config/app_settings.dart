@@ -1,4 +1,4 @@
 abstract final class AppSettings {
-  static const captureCameraLocation = false;
-  static const captureGalleryLocation = false;
+  static const captureCameraLocation = true;
+  static const captureGalleryLocation = true;
 }
