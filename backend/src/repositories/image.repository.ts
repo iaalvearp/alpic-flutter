@@ -155,11 +155,16 @@ export class SupabaseImageRepository implements ImageRepository {
     bytes: Uint8Array,
     contentType: string,
   ): Promise<void> {
-    const { error } = await this.client.storage
+    console.log(`Storage upload: path=${path}, bytes=${bytes.length}, type=${contentType}`);
+    const { data, error } = await this.client.storage
       .from(this.bucketName)
       .upload(path, bytes, { contentType, upsert: false });
 
-    if (error) throw new PersistenceError('upload image file', error);
+    if (error) {
+      console.error('Storage upload error:', JSON.stringify(error));
+      throw new PersistenceError('upload image file', error);
+    }
+    console.log('Storage upload success:', JSON.stringify(data));
   }
 
   async removeFile(path: string): Promise<void> {

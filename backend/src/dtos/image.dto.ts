@@ -117,7 +117,9 @@ export const parseCreateImageDto = async (
   ownerId: string,
 ): Promise<{ input: CreateImageInput; file: { bytes: Uint8Array; contentType: string; extension: string } }> => {
   const file = formData.get('file');
-  if (!file || !(file instanceof File)) throw badRequest('file is required');
+  if (!file || typeof file === 'string' || !('name' in file) || !('size' in file) || !('arrayBuffer' in file)) {
+    throw badRequest('file is required');
+  }
 
   const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
   if (file.size > MAX_SIZE) {
@@ -129,7 +131,7 @@ export const parseCreateImageDto = async (
     if (key !== 'file') values[key] = value;
   });
 
-  if (!/^image\/(jpeg|png|webp|gif|heic|heif|bmp|tiff)$/i.test(file.type)) {
+  if (!/^image\//i.test(file.type)) {
     throw badRequest('file must be a supported image');
   }
 
