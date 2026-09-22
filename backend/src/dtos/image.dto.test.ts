@@ -33,6 +33,29 @@ describe('image DTO', () => {
     );
     const result = await parseCreateImageDto(formData, 'owner-1');
     assert.equal(result.input.latitude, -0.18);
+    assert.equal(
+      result.input.mapsUrl,
+      'https://www.google.com/maps?q=-0.18,-78.48',
+    );
+
+    const withMapsUrl = createFormData(
+      {
+        ...validFields,
+        latitude: '-2.1',
+        longitude: '-79.9',
+        mapsUrl: 'https://maps.example/x',
+      },
+      createFile('photo.png', 'image/png', 3),
+    );
+    const customResult = await parseCreateImageDto(withMapsUrl, 'owner-1');
+    assert.equal(customResult.input.mapsUrl, 'https://maps.example/x');
+
+    const withoutCoords = createFormData(
+      validFields,
+      createFile('photo.png', 'image/png', 3),
+    );
+    const noCoordsResult = await parseCreateImageDto(withoutCoords, 'owner-1');
+    assert.equal(noCoordsResult.input.mapsUrl, null);
 
     const invalidFormData = createFormData(
       { ...validFields, latitude: '91', longitude: '0' },

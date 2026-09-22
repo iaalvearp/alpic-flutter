@@ -147,7 +147,11 @@ export const parseCreateImageDto = async (
   const latitude = optionalNumber(values.latitude, 'latitude');
   const longitude = optionalNumber(values.longitude, 'longitude');
   validateCoordinates(latitude, longitude);
-  const mapsUrl = optionalString(values.mapsUrl, 'mapsUrl', 2048);
+  const mapsUrl =
+    optionalString(values.mapsUrl, 'mapsUrl', 2048) ??
+    (latitude !== null && longitude !== null
+      ? `https://www.google.com/maps?q=${latitude},${longitude}`
+      : null);
   if (mapsUrl) {
     let url: URL;
     try {
