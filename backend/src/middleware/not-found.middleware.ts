@@ -1,12 +1,13 @@
-import type { RequestHandler } from 'express';
-import { AppError } from '../models/app-error.model.js';
+import type { NotFoundHandler } from 'hono';
 
-export const notFoundMiddleware: RequestHandler = (request, _response, next) => {
-  next(
-    new AppError(
-      'Route not found',
-      404,
-      'ROUTE_NOT_FOUND',
-    ),
+export const notFoundHandler: NotFoundHandler = (c) => {
+  return c.json(
+    {
+      error: {
+        code: 'NOT_FOUND',
+        message: `Route ${c.req.method} ${c.req.path} not found`,
+      },
+    },
+    404,
   );
 };

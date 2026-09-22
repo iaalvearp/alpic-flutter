@@ -1,23 +1,16 @@
-import type { RequestHandler } from 'express';
+import type { Context, Next } from 'hono';
 import { AppError } from '../models/app-error.model.js';
-import type { UserRole } from '../models/user.model.js';
+import { UserRole } from '../models/user.model.js';
 
-/**
- * Authorization is deliberately separate from JWT authentication. The JWT
- * middleware identifies the caller; this middleware checks the allowed roles.
- */
-export const requireRoles = (...allowedRoles: UserRole[]): RequestHandler =>
-  (request, _response, next) => {
-    const user = request.user;
+export const requireRole = (...roles: UserRole[]) => {
+  return async (c: Context, next: Next) => {
+    const user = c.get('user');
     if (!user) {
-      next(new AppError('Authentication required', 401, 'UNAUTHORIZED'));
-      return;
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
-
-    if (!user.role || !allowedRoles.includes(user.role)) {
-      next(new AppError('Insufficient permissions', 403, 'FORBIDDEN'));
-      return;
+    if (!user.role || !roles.includes(user.role)) {
+      throw new AppError('Insufficient permissions', 403, 'FORBIDDEN');
     }
-
-    next();
+    await next();
   };
+};

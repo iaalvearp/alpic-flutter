@@ -1,37 +1,36 @@
-import type { RequestHandler } from 'express';
-import { AppError } from '../models/app-error.model.js';
+import type { MiddlewareHandler } from 'hono';
+import type { AppEnv } from '../config/env.js';
 
-const allowedMethods = 'GET,POST,PUT,DELETE,OPTIONS';
-const allowedHeaders = 'Authorization,Content-Type';
+export const createCorsMiddleware = (env: AppEnv): MiddlewareHandler => {
+  const origins = env.corsOrigins
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
 
-/**
- * CORS is deny-by-default. Browser clients must explicitly configure their
- * origin through CORS_ORIGINS; native Flutter clients usually send no Origin.
- */
-export const createCorsMiddleware = (
-  allowedOrigins: readonly string[],
-): RequestHandler => (request, response, next) => {
-  const origin = request.header('origin');
+  return async (c, next) => {
+    const origin = c.req.header('Origin');
 
-  if (!origin) {
-    next();
-    return;
-  }
+    if (origin && origins.length > 0 && !origins.includes('*') && !origins.includes(origin)) {
+      return c.json(
+        { error: { code: 'CORS_ORIGIN_NOT_ALLOWED', message: 'Origin is not allowed' } },
+        403,
+      );
+    }
 
-  if (!allowedOrigins.includes(origin)) {
-    next(new AppError('Origin is not allowed', 403, 'CORS_ORIGIN_NOT_ALLOWED'));
-    return;
-  }
+    if (origin) {
+      const allowed = origins.includes('*') ? origin : (origins.includes(origin) ? origin : origin);
+      c.header('Access-Control-Allow-Origin', allowed);
+    }
 
-  response.setHeader('Access-Control-Allow-Origin', origin);
-  response.setHeader('Vary', 'Origin');
-  response.setHeader('Access-Control-Allow-Methods', allowedMethods);
-  response.setHeader('Access-Control-Allow-Headers', allowedHeaders);
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    c.header('Access-Control-Expose-Headers', 'Content-Length');
+    c.header('Access-Control-Max-Age', '86400');
 
-  if (request.method === 'OPTIONS') {
-    response.status(204).end();
-    return;
-  }
+    if (c.req.method === 'OPTIONS') {
+      return new Response(null, { status: 204 });
+    }
 
-  next();
+    await next();
+  };
 };
