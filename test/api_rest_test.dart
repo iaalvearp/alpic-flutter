@@ -13,7 +13,7 @@ void main() {
   test('login stores the JWT and sends it on subsequent requests', () async {
     final tokenStore = _MemoryTokenStore();
     final client = _ApiTestClient((request) {
-      if (request.method == 'POST' && request.url.path == '/api/auth/login') {
+      if (request.method == 'POST' && request.url.path == '/api/v1/auth/login') {
         return _jsonResponse({
           'data': {
             'user': {
@@ -44,7 +44,7 @@ void main() {
       email: 'user@example.com',
       password: 'correct-password',
     );
-    await apiClient.getJson('/api/auth/me');
+    await apiClient.getJson('/api/v1/auth/me');
 
     expect(session.user.id, 'user-1');
     expect(tokenStore.value, 'jwt-token');
@@ -63,7 +63,7 @@ void main() {
     );
 
     await expectLater(
-      apiClient.getJson('/api/images/missing'),
+      apiClient.getJson('/api/v1/images/missing'),
       throwsA(
         isA<ApiException>()
             .having((error) => error.statusCode, 'status', 404)

@@ -12,7 +12,7 @@ class RestImageWeatherRepository implements ImageWeatherRepository {
 
   @override
   Future<ImageWeather> loadForImage(String imageId) async {
-    final response = await _client.getJson('/api/images/$imageId/weather');
+    final response = await _client.getJson('/api/v1/images/$imageId/weather');
     final data = response['data'];
     if (data is! Map) throw const FormatException('Invalid weather response');
     return ImageWeather.fromApiJson(Map<String, dynamic>.from(data));

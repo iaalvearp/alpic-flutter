@@ -12,7 +12,7 @@ class RestImageRepository implements ImageRepository {
   @override
   Future<List<ImageRecord>> loadVisible() async {
     try {
-      final response = await _client.getJson('/api/images');
+      final response = await _client.getJson('/api/v1/images');
       final data = response['data'];
       if (data is! List) throw const FormatException('Invalid image list');
       return data
@@ -33,7 +33,7 @@ class RestImageRepository implements ImageRepository {
       final file = image.localFile;
       if (file == null) throw StateError('Local image file is unavailable');
       final response = await _client.postMultipart(
-        path: '/api/images',
+        path: '/api/v1/images',
         fields: {
           'name': image.name,
           'alt': image.alt,
@@ -63,7 +63,7 @@ class RestImageRepository implements ImageRepository {
     try {
       final id = image.id;
       if (id == null) throw StateError('Remote image identity is unavailable');
-      final response = await _client.putJson('/api/images/$id', {
+      final response = await _client.putJson('/api/v1/images/$id', {
         'name': image.name,
         'alt': image.alt,
         'description': image.description,
@@ -84,7 +84,7 @@ class RestImageRepository implements ImageRepository {
     try {
       final id = image.id;
       if (id == null) throw StateError('Remote image identity is unavailable');
-      await _client.delete('/api/images/$id');
+      await _client.delete('/api/v1/images/$id');
     } catch (error, stackTrace) {
       _debugLog('REST image soft delete failed', error, stackTrace);
       throw const ImageSoftDeleteException();

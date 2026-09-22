@@ -10,7 +10,7 @@ class ApiAuthService {
     required String email,
     required String password,
   }) async {
-    final response = await _client.postJson('/api/auth/login', {
+    final response = await _client.postJson('/api/v1/auth/login', {
       'email': email,
       'password': password,
     });
@@ -21,7 +21,7 @@ class ApiAuthService {
     required String email,
     required String password,
   }) async {
-    final response = await _client.postJson('/api/auth/register', {
+    final response = await _client.postJson('/api/v1/auth/register', {
       'email': email,
       'password': password,
     });
@@ -33,7 +33,7 @@ class ApiAuthService {
     if (token == null || token.isEmpty) return null;
 
     try {
-      final response = await _client.getJson('/api/auth/me');
+      final response = await _client.getJson('/api/v1/auth/me');
       final data = _data(response);
       return AuthSession(user: AuthUser.fromJson(data), accessToken: token);
     } on ApiException catch (error) {
