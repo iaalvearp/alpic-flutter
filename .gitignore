@@ -37,6 +37,7 @@ migrate_working_dir/
 /backend/node_modules/
 /backend/dist/
 /backend/.env
+/backend/.dev.vars
 
 # Symbolication related
 app.*.symbols

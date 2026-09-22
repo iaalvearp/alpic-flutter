@@ -1,0 +1,12 @@
+name = "alpic-backend"
+main = "src/index.ts"
+compatibility_date = "2024-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NODE_ENV = "production"
+API_PREFIX = "/api/v1"
+SUPABASE_STORAGE_BUCKET = "alpics-images"
+OPEN_METEO_BASE_URL = "https://api.open-meteo.com/v1/forecast"
+EXTERNAL_API_TIMEOUT_MS = "5000"
+CORS_ORIGINS = "https://alpic-web.pages.dev,http://localhost:4321"
