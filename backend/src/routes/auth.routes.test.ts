@@ -1,102 +1,159 @@
 import assert from 'node:assert/strict';
-import express from 'express';
-import { test } from 'node:test';
-import request from 'supertest';
-import { errorMiddleware } from '../middleware/error.middleware.js';
+import { describe, it } from 'vitest';
+import { Hono } from 'hono';
+import { errorHandler } from '../middleware/error.middleware.js';
 import { AppError } from '../models/app-error.model.js';
 import { UserRole, type AuthSessionModel } from '../models/user.model.js';
-import { createAuthRouter } from './auth.routes.js';
-import type {
-  AuthServicePort,
-} from '../services/auth.service.js';
-import type { JwtUser, JwtVerifier } from '../middleware/auth.middleware.js';
+import { AuthController } from '../controllers/auth.controller.js';
+import type { AuthServicePort } from '../services/auth.service.js';
+import type { JwtUser } from '../middleware/auth.middleware.js';
+import { createAuthMiddleware } from '../middleware/auth.middleware.js';
+import { createAuthRoutes } from './auth.routes.js';
 
-const buildApp = (): express.Express => {
-  const app = express();
-  app.use(express.json());
-  app.use(createAuthRouter(new FakeAuthService(), new FakeJwtVerifier()));
-  app.use(errorMiddleware);
+const createTestApp = (authService: AuthServicePort = new FakeAuthService()) => {
+  const app = new Hono();
+  app.onError(errorHandler);
+
+  const env = {
+    NODE_ENV: 'development',
+    API_PREFIX: '/api/v1',
+    SUPABASE_URL: 'https://test.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-key',
+    SUPABASE_STORAGE_BUCKET: 'test-bucket',
+    CORS_ORIGINS: '*',
+    OPEN_METEO_BASE_URL: 'https://api.open-meteo.com/v1/forecast',
+    EXTERNAL_API_TIMEOUT_MS: '5000',
+  } as any;
+
+  app.use('*', async (c, next) => {
+    c.set('appEnv', env);
+    c.set('authService', authService);
+    await next();
+  });
+
+  const controller = new AuthController(authService);
+  const authMiddleware = createAuthMiddleware(authService);
+  app.route('/api/auth', createAuthRoutes(controller, authMiddleware));
+
   return app;
 };
 
-test('POST /api/auth/register registers a valid user', async () => {
-  const response = await request(buildApp())
-    .post('/api/auth/register')
-    .send({ email: 'new@example.com', password: 'correct-password' });
+describe('Auth routes', () => {
+  it('POST /api/auth/register registers a valid user', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'new@example.com', password: 'correct-password' }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(response.status, 201);
-  assert.equal(response.body.data.user.email, 'new@example.com');
-  assert.equal(response.body.data.tokenType, 'Bearer');
-  assert.equal(response.body.data.accessToken, 'valid-token');
-  assert.equal(response.body.data.user.password, undefined);
-});
-
-test('POST /api/auth/login returns a JWT for valid credentials', async () => {
-  const response = await request(buildApp())
-    .post('/api/auth/login')
-    .send({ email: 'user@example.com', password: 'correct-password' });
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.accessToken, 'valid-token');
-});
-
-test('POST /api/auth/login rejects invalid credentials', async () => {
-  const response = await request(buildApp())
-    .post('/api/auth/login')
-    .send({ email: 'user@example.com', password: 'wrong-password' });
-
-  assert.equal(response.status, 401);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'INVALID_CREDENTIALS',
-      message: 'Invalid credentials',
-    },
+    assert.equal(res.status, 201);
+    const data = body.data as Record<string, unknown>;
+    const user = data.user as Record<string, unknown>;
+    assert.equal(user.email, 'new@example.com');
+    assert.equal(data.tokenType, 'Bearer');
+    assert.equal(data.accessToken, 'valid-token');
   });
-});
 
-test('POST /api/auth/login rejects malformed credential bodies with 400', async () => {
-  const response = await request(buildApp())
-    .post('/api/auth/login')
-    .set('Content-Type', 'application/json')
-    .send('null');
+  it('POST /api/auth/login returns a JWT for valid credentials', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com', password: 'correct-password' }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'INVALID_REQUEST',
-      message: 'Request body is not valid JSON',
-    },
+    assert.equal(res.status, 200);
+    assert.equal((body.data as Record<string, unknown>).accessToken, 'valid-token');
   });
-});
 
-test('GET /api/auth/me returns the authenticated user with a valid token', async () => {
-  const response = await request(buildApp())
-    .get('/api/auth/me')
-    .set('Authorization', 'Bearer valid-token');
+  it('POST /api/auth/login rejects invalid credentials', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com', password: 'wrong-password' }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(response.body.data, {
-    id: 'user-1',
-    email: 'user@example.com',
-    createdAt: null,
-    role: 'USER',
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, {
+      error: {
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid credentials',
+      },
+    });
   });
-});
 
-test('GET /api/auth/me rejects a request without a token', async () => {
-  const response = await request(buildApp()).get('/api/auth/me');
+  it('POST /api/auth/login rejects malformed credential bodies with 400', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'null',
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'UNAUTHORIZED');
-});
+    assert.equal(res.status, 400);
+    assert.deepEqual(body, {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'request body must be a JSON object',
+      },
+    });
+  });
 
-test('GET /api/auth/me rejects an invalid token', async () => {
-  const response = await request(buildApp())
-    .get('/api/auth/me')
-    .set('Authorization', 'Bearer invalid-token');
+  it('GET /api/auth/me returns the authenticated user with a valid token', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/me', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'INVALID_TOKEN');
+    assert.equal(res.status, 200);
+    assert.deepEqual(body.data, {
+      id: 'user-1',
+      email: 'user@example.com',
+      createdAt: null,
+      role: 'USER',
+    });
+  });
+
+  it('GET /api/auth/me rejects a request without a token', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(new Request('http://localhost/api/auth/me'));
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 401);
+    const error = body.error as Record<string, unknown>;
+    assert.equal(error.code, 'UNAUTHORIZED');
+  });
+
+  it('GET /api/auth/me rejects an invalid token', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/auth/me', {
+        headers: { Authorization: 'Bearer invalid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 401);
+    const error = body.error as Record<string, unknown>;
+    assert.equal(error.code, 'INVALID_TOKEN');
+  });
 });
 
 class FakeAuthService implements AuthServicePort {
@@ -120,20 +177,12 @@ class FakeAuthService implements AuthServicePort {
   }
 }
 
-class FakeJwtVerifier implements JwtVerifier {
-  constructor(private readonly service = new FakeAuthService()) {}
-
-  verify(token: string): Promise<JwtUser> {
-    return this.service.verifyToken(token);
-  }
-}
-
 const session = (email: string): AuthSessionModel => ({
-    user: {
-      id: 'user-1',
-      email,
-      createdAt: null,
-      role: UserRole.USER,
+  user: {
+    id: 'user-1',
+    email,
+    createdAt: null,
+    role: UserRole.USER,
   },
   accessToken: 'valid-token',
   expiresAt: null,

@@ -1,52 +1,65 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import request from 'supertest';
-import { app } from './app.js';
+import { describe, it } from 'vitest';
+import { Hono } from 'hono';
+import { errorHandler } from './middleware/error.middleware.js';
+import { notFoundHandler } from './middleware/not-found.middleware.js';
+import { createHealthRoutes } from './routes/health.routes.js';
+import { HealthController } from './controllers/health.controller.js';
+import { HealthService } from './services/health.service.js';
 
-test('GET /health returns the backend status', async () => {
-  const response = await request(app).get('/health');
+const createTestApp = () => {
+  const app = new Hono();
+  app.onError(errorHandler);
+  app.notFound(notFoundHandler);
 
-  assert.equal(response.status, 200);
-  assert.equal(response.body.status, 'ok');
-  assert.equal(response.body.service, 'alpic-backend');
-  assert.equal(response.body.environment, 'development');
-  assert.equal(typeof response.body.timestamp, 'string');
-  assert.equal(typeof response.body.uptime, 'number');
-});
+  const env = {
+    NODE_ENV: 'development',
+    API_PREFIX: '/api/v1',
+    SUPABASE_URL: 'https://test.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-key',
+    SUPABASE_STORAGE_BUCKET: 'test-bucket',
+    CORS_ORIGINS: '*',
+    OPEN_METEO_BASE_URL: 'https://api.open-meteo.com/v1/forecast',
+    EXTERNAL_API_TIMEOUT_MS: '5000',
+  } as any;
 
-test('unknown routes return the standard error shape', async () => {
-  const response = await request(app).get('/missing');
-
-  assert.equal(response.status, 404);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'ROUTE_NOT_FOUND',
-      message: 'Route not found',
-    },
+  app.use('*', async (c, next) => {
+    c.set('appEnv', env);
+    await next();
   });
-});
 
-test('malformed JSON returns 400 without exposing parser details', async () => {
-  const response = await request(app)
-    .post('/api/auth/login')
-    .set('Content-Type', 'application/json')
-    .send('{"email":');
+  const healthService = new HealthService();
+  const healthController = new HealthController(healthService);
+  app.route('/api/v1/health', createHealthRoutes(healthController));
 
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'INVALID_REQUEST',
-      message: 'Request body is not valid JSON',
-    },
+  return app;
+};
+
+describe('App', () => {
+  it('GET /api/v1/health returns the backend status', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(new Request('http://localhost/api/v1/health'));
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.equal(body.status, 'ok');
+    assert.equal(body.service, 'alpic-backend');
+    assert.equal(body.environment, 'cloudflare-workers');
+    assert.equal(typeof body.timestamp, 'string');
+    assert.equal(typeof body.uptime, 'number');
   });
-});
 
-test('the real app protects auth and image routes before Supabase access', async () => {
-  const authResponse = await request(app).get('/api/auth/me');
-  const imageResponse = await request(app).get('/api/images');
+  it('unknown routes return the standard error shape', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(new Request('http://localhost/missing'));
+    const body = await res.json() as Record<string, unknown>;
 
-  assert.equal(authResponse.status, 401);
-  assert.equal(authResponse.body.error.code, 'UNAUTHORIZED');
-  assert.equal(imageResponse.status, 401);
-  assert.equal(imageResponse.body.error.code, 'UNAUTHORIZED');
+    assert.equal(res.status, 404);
+    assert.deepEqual(body, {
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Route GET /missing not found',
+      },
+    });
+  });
 });

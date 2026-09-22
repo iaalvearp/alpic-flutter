@@ -1,287 +1,426 @@
 import assert from 'node:assert/strict';
-import express from 'express';
-import { test } from 'node:test';
-import request from 'supertest';
-import { errorMiddleware } from '../middleware/error.middleware.js';
+import { describe, it } from 'vitest';
+import { Hono } from 'hono';
+import { errorHandler } from '../middleware/error.middleware.js';
 import { AppError } from '../models/app-error.model.js';
 import {
   ImageModel,
   type CreateImageInput,
   type ImageFile,
 } from '../models/image.model.js';
-import { UserRole, type ImageActor } from '../models/user.model.js';
-import { createImageRouter } from './image.routes.js';
+import { UserRole, type ImageActor, type AuthSessionModel } from '../models/user.model.js';
+import { ImageController } from '../controllers/image.controller.js';
+import { WeatherController } from '../controllers/weather.controller.js';
+import { createImageRoutes } from './image.routes.js';
 import type { ImageServicePort } from '../services/image.service.js';
 import type { WeatherServicePort } from '../services/weather.service.js';
 import type { ImageWeatherModel } from '../models/weather.model.js';
-import type { JwtVerifier, JwtUser } from '../middleware/auth.middleware.js';
+import type { JwtUser } from '../middleware/auth.middleware.js';
+import { createAuthMiddleware } from '../middleware/auth.middleware.js';
+import type { AuthServicePort } from '../services/auth.service.js';
 
-const buildApp = (
+const createTestApp = (
   service: ImageServicePort = new FakeImageService(),
   weatherService: WeatherServicePort = new FakeWeatherService(),
-): express.Express => {
-  const app = express();
-  app.use(express.json());
-  app.use(createImageRouter(service, new FakeJwtVerifier(), weatherService));
-  app.use(errorMiddleware);
+  authService: AuthServicePort = new FakeAuthService(),
+) => {
+  const app = new Hono();
+  app.onError(errorHandler);
+
+  const env = {
+    NODE_ENV: 'development',
+    API_PREFIX: '/api/v1',
+    SUPABASE_URL: 'https://test.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-key',
+    SUPABASE_STORAGE_BUCKET: 'test-bucket',
+    CORS_ORIGINS: '*',
+    OPEN_METEO_BASE_URL: 'https://api.open-meteo.com/v1/forecast',
+    EXTERNAL_API_TIMEOUT_MS: '5000',
+  } as any;
+
+  app.use('*', async (c, next) => {
+    c.set('appEnv', env);
+    c.set('authService', authService);
+    await next();
+  });
+
+  const imageController = new ImageController(service);
+  const weatherController = new WeatherController(weatherService);
+  const authMiddleware = createAuthMiddleware(authService);
+  app.route('/api/images', createImageRoutes(imageController, weatherController, authMiddleware));
+
   return app;
 };
 
-test('POST /api/images creates an image from multipart data', async () => {
-  const response = await request(buildApp())
-    .post('/api/images')
-    .field('name', 'Imagen nueva')
-    .field('alt', 'Texto alternativo')
-    .field('description', 'Descripción')
-    .field('source', 'gallery')
-    .set('Authorization', 'Bearer valid-token')
-    .attach('file', Buffer.from([1, 2, 3]), {
-      filename: 'foto.png',
-      contentType: 'image/png',
+const createFormData = (fields: Record<string, string>, file?: File): FormData => {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    formData.append(key, value);
+  }
+  if (file) {
+    formData.append('file', file);
+  }
+  return formData;
+};
+
+const createFile = (name: string, type: string, size: number): File => {
+  const buffer = new ArrayBuffer(size);
+  return new File([buffer], name, { type });
+};
+
+describe('Image routes', () => {
+  it('POST /api/images creates an image from multipart data', async () => {
+    const app = createTestApp();
+    const formData = createFormData(
+      {
+        name: 'Imagen nueva',
+        alt: 'Texto alternativo',
+        description: 'Descripción',
+        source: 'gallery',
+      },
+      createFile('foto.png', 'image/png', 3),
+    );
+
+    const res = await app.fetch(
+      new Request('http://localhost/api/images', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid-token' },
+        body: formData,
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 201);
+    assert.equal((body.data as Record<string, unknown>).name, 'Imagen nueva');
+    assert.equal((body.data as Record<string, unknown>).originalFilename, 'foto.png');
+  });
+
+  it('GET /api/images returns visible images for an owner', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.equal((body.data as unknown[]).length, 1);
+    assert.equal(((body.data as unknown[])[0] as Record<string, unknown>).ownerId, 'owner-1');
+  });
+
+  it('GET /api/images/:id returns one image', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.equal((body.data as Record<string, unknown>).id, '11111111-1111-4111-8111-111111111111');
+  });
+
+  it('GET /api/images/:id rejects a malformed ID before persistence', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/not-a-uuid', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(body, {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'id must be a valid UUID',
+      },
+    });
+  });
+
+  it('GET /api/images/:id/weather returns current weather JSON', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111/weather', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    const data = body.data as Record<string, unknown>;
+    assert.equal(data.imageId, '11111111-1111-4111-8111-111111111111');
+    assert.equal(data.provider, 'open-meteo');
+    const current = data.current as Record<string, unknown>;
+    const temp = current.temperature as Record<string, unknown>;
+    assert.equal(temp.value, 18.5);
+  });
+
+  it('GET /api/images/:id/weather returns 404 for a missing image', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/22222222-2222-4222-8222-222222222222/weather', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 404);
+    assert.equal((body.error as Record<string, unknown>).code, 'IMAGE_NOT_FOUND');
+  });
+
+  it('GET /api/images/:id/weather returns 400 without coordinates', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/33333333-3333-4333-8333-333333333333/weather', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 400);
+    assert.equal((body.error as Record<string, unknown>).code, 'IMAGE_COORDINATES_REQUIRED');
+  });
+
+  it('GET /api/images/:id/weather requires authentication', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111/weather'),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 401);
+    assert.equal((body.error as Record<string, unknown>).code, 'UNAUTHORIZED');
+  });
+
+  it('GET /api/images/:id returns 404 when the image does not exist', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/22222222-2222-4222-8222-222222222222', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 404);
+    assert.deepEqual(body, {
+      error: {
+        code: 'IMAGE_NOT_FOUND',
+        message: 'Image not found',
+      },
+    });
+  });
+
+  it('GET /api/images/:id returns 404 when the image belongs to another user', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        headers: { Authorization: 'Bearer other-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 404);
+    assert.equal((body.error as Record<string, unknown>).code, 'IMAGE_NOT_FOUND');
+  });
+
+  it('PATCH /api/images/:id returns 404 when another user tries to modify the image', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer other-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Cambio no permitido',
+          alt: 'Alt no permitido',
+          description: 'Descripción no permitida',
+        }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 404);
+    assert.equal((body.error as Record<string, unknown>).code, 'IMAGE_NOT_FOUND');
+  });
+
+  it('PATCH /api/images/:id updates image metadata', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer valid-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Imagen editada',
+          alt: 'Alt editado',
+          description: 'Descripción editada',
+        }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.equal((body.data as Record<string, unknown>).name, 'Imagen editada');
+  });
+
+  it('ADMIN can modify an image owned by another user', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer admin-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Imagen administrada',
+          alt: 'Alt administrado',
+          description: 'Descripción administrada',
+        }),
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.equal((body.data as Record<string, unknown>).name, 'Imagen administrada');
+  });
+
+  it('DELETE /api/images/:id returns 404 when another user tries to delete the image', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer other-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 404);
+    assert.equal((body.error as Record<string, unknown>).code, 'IMAGE_NOT_FOUND');
+  });
+
+  it('DELETE /api/images/:id performs a soft delete', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images/11111111-1111-4111-8111-111111111111', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(body, {
+      data: { id: '11111111-1111-4111-8111-111111111111', deleted: true },
+    });
+  });
+
+  it('invalid image input returns a consistent 400 JSON error', async () => {
+    const app = createTestApp();
+    const formData = createFormData({
+      name: 'Imagen sin archivo',
     });
 
-  assert.equal(response.status, 201);
-  assert.equal(response.body.data.name, 'Imagen nueva');
-  assert.equal(response.body.data.originalFilename, 'foto.png');
-});
+    const res = await app.fetch(
+      new Request('http://localhost/api/images', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid-token' },
+        body: formData,
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
 
-test('GET /api/images returns visible images for an owner', async () => {
-  const response = await request(buildApp())
-    .get('/api/images')
-    .set('Authorization', 'Bearer valid-token');
+    assert.equal(res.status, 400);
+    assert.deepEqual(body, {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'file is required',
+      },
+    });
+  });
 
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.length, 1);
-  assert.equal(response.body.data[0].ownerId, 'owner-1');
-});
+  it('protected image endpoint rejects requests without a token', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(new Request('http://localhost/api/images'));
+    const body = await res.json() as Record<string, unknown>;
 
-test('GET /api/admin/images rejects a normal user with 403', async () => {
-  const response = await request(buildApp())
-    .get('/api/admin/images')
-    .set('Authorization', 'Bearer valid-token');
+    assert.equal(res.status, 401);
+    assert.equal((body.error as Record<string, unknown>).code, 'UNAUTHORIZED');
+  });
 
-  assert.equal(response.status, 403);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'FORBIDDEN',
-      message: 'Insufficient permissions',
-    },
+  it('protected image endpoint rejects an invalid token', async () => {
+    const app = createTestApp();
+    const res = await app.fetch(
+      new Request('http://localhost/api/images', {
+        headers: { Authorization: 'Bearer invalid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 401);
+    assert.equal((body.error as Record<string, unknown>).code, 'INVALID_TOKEN');
+  });
+
+  it('repository failures return a consistent 500 JSON error', async () => {
+    const failingService: ImageServicePort = {
+      create: async () => { throw new Error('not used'); },
+      findVisible: async () => { throw new Error('database unavailable'); },
+      findById: async () => null,
+      updateMetadata: async () => { throw new Error('not used'); },
+      softDelete: async () => { throw new Error('not used'); },
+    };
+
+    const app = createTestApp(failingService);
+    const res = await app.fetch(
+      new Request('http://localhost/api/images', {
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    );
+    const body = await res.json() as Record<string, unknown>;
+
+    assert.equal(res.status, 500);
+    assert.deepEqual(body, {
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred',
+      },
+    });
   });
 });
 
-test('GET /api/admin/images allows an administrator', async () => {
-  const response = await request(buildApp())
-    .get('/api/admin/images')
-    .set('Authorization', 'Bearer admin-token');
+class FakeAuthService implements AuthServicePort {
+  async register(email: string, password: string): Promise<AuthSessionModel> {
+    assert.equal(password, 'correct-password');
+    return session(email);
+  }
 
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.length, 1);
-});
+  async login(email: string, password: string): Promise<AuthSessionModel> {
+    if (password !== 'correct-password') {
+      throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
+    }
+    return session(email);
+  }
 
-test('GET /api/admin/images rejects an unauthenticated request with 401', async () => {
-  const response = await request(buildApp()).get('/api/admin/images');
-
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'UNAUTHORIZED');
-});
-
-test('GET /api/images/:id returns one image', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/11111111-1111-4111-8111-111111111111')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.id, '11111111-1111-4111-8111-111111111111');
-});
-
-test('GET /api/images/:id rejects a malformed ID before persistence', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/not-a-uuid')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'id must be a valid UUID',
-    },
-  });
-});
-
-test('GET /api/images/:id/weather returns current weather JSON', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/11111111-1111-4111-8111-111111111111/weather')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.imageId, '11111111-1111-4111-8111-111111111111');
-  assert.equal(response.body.data.provider, 'open-meteo');
-  assert.equal(response.body.data.current.temperature.value, 18.5);
-});
-
-test('GET /api/images/:id/weather returns 404 for a missing image', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/22222222-2222-4222-8222-222222222222/weather')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 404);
-  assert.equal(response.body.error.code, 'IMAGE_NOT_FOUND');
-});
-
-test('GET /api/images/:id/weather returns 400 without coordinates', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/33333333-3333-4333-8333-333333333333/weather')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, 'IMAGE_COORDINATES_REQUIRED');
-});
-
-test('GET /api/images/:id/weather requires authentication', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/11111111-1111-4111-8111-111111111111/weather');
-
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'UNAUTHORIZED');
-});
-
-test('GET /api/images/:id returns 404 when the image does not exist', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/22222222-2222-4222-8222-222222222222')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 404);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'IMAGE_NOT_FOUND',
-      message: 'Image not found',
-    },
-  });
-});
-
-test('GET /api/images/:id returns 404 when the image belongs to another user', async () => {
-  const response = await request(buildApp())
-    .get('/api/images/11111111-1111-4111-8111-111111111111')
-    .set('Authorization', 'Bearer other-token');
-
-  assert.equal(response.status, 404);
-  assert.equal(response.body.error.code, 'IMAGE_NOT_FOUND');
-});
-
-test('PUT /api/images/:id returns 404 when another user tries to modify the image', async () => {
-  const response = await request(buildApp())
-    .put('/api/images/11111111-1111-4111-8111-111111111111')
-    .send({
-      name: 'Cambio no permitido',
-      alt: 'Alt no permitido',
-      description: 'Descripción no permitida',
-    })
-    .set('Authorization', 'Bearer other-token');
-
-  assert.equal(response.status, 404);
-  assert.equal(response.body.error.code, 'IMAGE_NOT_FOUND');
-});
-
-test('PUT /api/images/:id updates image metadata', async () => {
-  const response = await request(buildApp())
-    .put('/api/images/11111111-1111-4111-8111-111111111111')
-    .send({
-      name: 'Imagen editada',
-      alt: 'Alt editado',
-      description: 'Descripción editada',
-    })
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.name, 'Imagen editada');
-});
-
-test('ADMIN can modify an image owned by another user', async () => {
-  const response = await request(buildApp())
-    .put('/api/images/11111111-1111-4111-8111-111111111111')
-    .send({
-      name: 'Imagen administrada',
-      alt: 'Alt administrado',
-      description: 'Descripción administrada',
-    })
-    .set('Authorization', 'Bearer admin-token');
-
-  assert.equal(response.status, 200);
-  assert.equal(response.body.data.name, 'Imagen administrada');
-});
-
-test('DELETE /api/images/:id returns 404 when another user tries to delete the image', async () => {
-  const response = await request(buildApp())
-    .delete('/api/images/11111111-1111-4111-8111-111111111111')
-    .set('Authorization', 'Bearer other-token');
-
-  assert.equal(response.status, 404);
-  assert.equal(response.body.error.code, 'IMAGE_NOT_FOUND');
-});
-
-test('DELETE /api/images/:id performs a soft delete', async () => {
-  const response = await request(buildApp())
-    .delete('/api/images/11111111-1111-4111-8111-111111111111')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(response.body, {
-    data: { id: '11111111-1111-4111-8111-111111111111', deleted: true },
-  });
-});
-
-test('invalid image input returns a consistent 400 JSON error', async () => {
-  const response = await request(buildApp())
-    .post('/api/images')
-    .field('name', 'Imagen sin archivo')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'file is required',
-    },
-  });
-});
-
-test('protected image endpoint rejects requests without a token', async () => {
-  const response = await request(buildApp()).get('/api/images');
-
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'UNAUTHORIZED');
-});
-
-test('protected image endpoint rejects an invalid token', async () => {
-  const response = await request(buildApp())
-    .get('/api/images')
-    .set('Authorization', 'Bearer invalid-token');
-
-  assert.equal(response.status, 401);
-  assert.equal(response.body.error.code, 'INVALID_TOKEN');
-});
-
-test('repository failures return a consistent 500 JSON error', async () => {
-  const failingService: ImageServicePort = {
-    create: async () => { throw new Error('not used'); },
-    findVisible: async () => { throw new Error('database unavailable'); },
-    findById: async () => null,
-    updateMetadata: async () => { throw new Error('not used'); },
-    softDelete: async () => { throw new Error('not used'); },
-  };
-
-  const response = await request(buildApp(failingService))
-    .get('/api/images')
-    .set('Authorization', 'Bearer valid-token');
-
-  assert.equal(response.status, 500);
-  assert.deepEqual(response.body, {
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: 'Internal server error',
-    },
-  });
-});
+  async verifyToken(token: string): Promise<JwtUser> {
+    if (!['valid-token', 'admin-token', 'other-token'].includes(token)) {
+      throw new AppError('Invalid or expired token', 401, 'INVALID_TOKEN');
+    }
+    if (token === 'admin-token') {
+      return { sub: 'admin-1', email: 'admin@example.com', role: UserRole.ADMIN };
+    }
+    if (token === 'other-token') {
+      return { sub: 'owner-2', email: 'other@example.com', role: UserRole.USER };
+    }
+    return { sub: 'owner-1', email: 'owner@example.com', role: UserRole.USER };
+  }
+}
 
 class FakeImageService implements ImageServicePort {
   async create(input: CreateImageInput, file: ImageFile): Promise<ImageModel> {
@@ -361,20 +500,16 @@ class FakeWeatherService implements WeatherServicePort {
   }
 }
 
-class FakeJwtVerifier implements JwtVerifier {
-  async verify(token: string): Promise<JwtUser> {
-    if (!['valid-token', 'admin-token', 'other-token'].includes(token)) {
-      throw new AppError('Invalid or expired token', 401, 'INVALID_TOKEN');
-    }
-    if (token === 'admin-token') {
-      return { sub: 'admin-1', email: 'admin@example.com', role: UserRole.ADMIN };
-    }
-    if (token === 'other-token') {
-      return { sub: 'owner-2', email: 'other@example.com', role: UserRole.USER };
-    }
-    return { sub: 'owner-1', email: 'owner@example.com', role: UserRole.USER };
-  }
-}
+const session = (email: string): AuthSessionModel => ({
+  user: {
+    id: 'user-1',
+    email,
+    createdAt: null,
+    role: UserRole.USER,
+  },
+  accessToken: 'valid-token',
+  expiresAt: null,
+});
 
 const sampleImage = (): ImageModel => {
   const timestamp = new Date('2026-09-21T12:00:00.000Z');

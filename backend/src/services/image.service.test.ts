@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, it } from 'vitest';
 import {
   ImageModel,
   type CreateImageInput,
@@ -9,32 +9,34 @@ import { ImageService } from './image.service.js';
 import type { ImageRepository } from '../repositories/image.repository.js';
 import { UserRole } from '../models/user.model.js';
 
-test('ImageService uploads before creating and rolls back on persistence failure', async () => {
-  const events: string[] = [];
-  const repository = new FakeImageRepository(events, true);
-  const service = new ImageService(repository);
+describe('ImageService', () => {
+  it('uploads before creating and rolls back on persistence failure', async () => {
+    const events: string[] = [];
+    const repository = new FakeImageRepository(events, true);
+    const service = new ImageService(repository);
 
-  await assert.rejects(() => service.create(input, file));
-  assert.deepEqual(events, ['publicUrl', 'uploadFile', 'create', 'removeFile']);
-});
+    await assert.rejects(() => service.create(input, file));
+    assert.deepEqual(events, ['publicUrl', 'uploadFile', 'create', 'removeFile']);
+  });
 
-test('ImageService delegates visible-image queries to the repository', async () => {
-  const events: string[] = [];
-  const repository = new FakeImageRepository(events, false);
-  const service = new ImageService(repository);
+  it('delegates visible-image queries to the repository', async () => {
+    const events: string[] = [];
+    const repository = new FakeImageRepository(events, false);
+    const service = new ImageService(repository);
 
-  const images = await service.findVisible({ id: 'owner-1', role: UserRole.USER });
-  assert.equal(images.length, 1);
-  assert.deepEqual(events, ['findVisibleByOwner']);
-});
+    const images = await service.findVisible({ id: 'owner-1', role: UserRole.USER });
+    assert.equal(images.length, 1);
+    assert.deepEqual(events, ['findVisibleByOwner']);
+  });
 
-test('ImageService lets an administrator list all visible images', async () => {
-  const events: string[] = [];
-  const repository = new FakeImageRepository(events, false);
-  const service = new ImageService(repository);
+  it('lets an administrator list all visible images', async () => {
+    const events: string[] = [];
+    const repository = new FakeImageRepository(events, false);
+    const service = new ImageService(repository);
 
-  await service.findVisible({ id: 'admin-1', role: UserRole.ADMIN });
-  assert.deepEqual(events, ['findAllVisible']);
+    await service.findVisible({ id: 'admin-1', role: UserRole.ADMIN });
+    assert.deepEqual(events, ['findAllVisible']);
+  });
 });
 
 const input: CreateImageInput = {
@@ -53,7 +55,7 @@ const input: CreateImageInput = {
 };
 
 const file: ImageFile = {
-  bytes: Buffer.from([1, 2, 3]),
+  bytes: new Uint8Array([1, 2, 3]),
   contentType: 'image/png',
   extension: 'png',
 };
