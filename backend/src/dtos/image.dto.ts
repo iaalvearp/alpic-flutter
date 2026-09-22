@@ -112,23 +112,27 @@ export const parseImageId = (value: unknown): string => {
   return id;
 };
 
-export const parseCreateImageDto = (
-  body: unknown,
-  file: Express.Multer.File | undefined,
+export const parseCreateImageDto = async (
+  formData: FormData,
   ownerId: string,
-): { input: CreateImageInput; file: { bytes: Buffer; contentType: string; extension: string } } => {
-  if (!file) throw badRequest('file is required');
+): Promise<{ input: CreateImageInput; file: { bytes: Uint8Array; contentType: string; extension: string } }> => {
+  const file = formData.get('file');
+  if (!file || !(file instanceof File)) throw badRequest('file is required');
 
-  const values = recordBody(body);
-  if (!/^image\/(jpeg|png|webp|gif|heic|heif|bmp|tiff)$/i.test(file.mimetype)) {
+  const values: Record<string, unknown> = {};
+  formData.forEach((value, key) => {
+    if (key !== 'file') values[key] = value;
+  });
+
+  if (!/^image\/(jpeg|png|webp|gif|heic|heif|bmp|tiff)$/i.test(file.type)) {
     throw badRequest('file must be a supported image');
   }
 
-  const extension = extname(file.originalname).replace('.', '').toLowerCase();
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
   if (!supportedExtensions.has(extension)) {
     throw badRequest('file must have a valid extension');
   }
-  if (file.originalname.length > 255) {
+  if (file.name.length > 255) {
     throw badRequest('original filename is too long');
   }
 
@@ -148,24 +152,26 @@ export const parseCreateImageDto = (
     }
   }
 
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
   return {
     input: {
       ownerId,
       name: requiredString(values.name, 'name', 255),
       alt: requiredString(values.alt, 'alt', 255),
       description: requiredString(values.description, 'description', 5000),
-      mimeType: file.mimetype,
+      mimeType: file.type,
       extension,
       sizeBytes: file.size,
       latitude,
       longitude,
       mapsUrl,
       source: imageSource(values.source),
-      originalFilename: file.originalname,
+      originalFilename: file.name,
     },
     file: {
-      bytes: file.buffer,
-      contentType: file.mimetype,
+      bytes,
+      contentType: file.type,
       extension,
     },
   };

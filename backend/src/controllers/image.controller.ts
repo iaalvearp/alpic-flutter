@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express';
+import type { Context } from 'hono';
 import { AppError } from '../models/app-error.model.js';
 import {
   parseCreateImageDto,
@@ -12,68 +12,51 @@ import { UserRole, type ImageActor } from '../models/user.model.js';
 export class ImageController {
   constructor(private readonly service: ImageServicePort) {}
 
-  private actor(request: Parameters<RequestHandler>[0]): ImageActor {
-    const user = request.user;
+  private actor(c: Context): ImageActor {
+    const user = c.get('user');
     if (!user?.sub) {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
     return { id: user.sub, role: user.role ?? UserRole.USER };
   }
 
-  create: RequestHandler = async (request, response, next) => {
-    try {
-      const { input, file } = parseCreateImageDto(
-        request.body,
-        request.file,
-        this.actor(request).id,
-      );
-      const image = await this.service.create(input, file);
-      response.status(201).json({ data: toImageResponseDto(image) });
-    } catch (error) {
-      next(error);
-    }
+  create = async (c: Context) => {
+    const formData = await c.req.formData();
+    const actor = this.actor(c);
+    const { input, file } = await parseCreateImageDto(formData, actor.id);
+    const image = await this.service.create(input, file);
+    return c.json({ data: toImageResponseDto(image) }, 201);
   };
 
-  list: RequestHandler = async (request, response, next) => {
-    try {
-      const images = await this.service.findVisible(this.actor(request));
-      response.json({ data: images.map(toImageResponseDto) });
-    } catch (error) {
-      next(error);
-    }
+  list = async (c: Context) => {
+    const actor = this.actor(c);
+    const images = await this.service.findVisible(actor);
+    return c.json({ data: images.map(toImageResponseDto) });
   };
 
-  getById: RequestHandler = async (request, response, next) => {
-    try {
-      const id = parseImageId(request.params.id);
-      const image = await this.service.findById(id, this.actor(request));
-      if (!image) {
-        throw new AppError('Image not found', 404, 'IMAGE_NOT_FOUND');
-      }
-      response.json({ data: toImageResponseDto(image) });
-    } catch (error) {
-      next(error);
+  getById = async (c: Context) => {
+    const id = parseImageId(c.req.param('id'));
+    const actor = this.actor(c);
+    const image = await this.service.findById(id, actor);
+    if (!image) {
+      throw new AppError('Image not found', 404, 'IMAGE_NOT_FOUND');
     }
+    return c.json({ data: toImageResponseDto(image) });
   };
 
-  update: RequestHandler = async (request, response, next) => {
-    try {
-      const id = parseImageId(request.params.id);
-      const dto = parseUpdateImageDto(request.body);
-      const image = await this.service.updateMetadata(id, this.actor(request), dto);
-      response.json({ data: toImageResponseDto(image) });
-    } catch (error) {
-      next(error);
-    }
+  update = async (c: Context) => {
+    const id = parseImageId(c.req.param('id'));
+    const body = await c.req.json();
+    const dto = parseUpdateImageDto(body);
+    const actor = this.actor(c);
+    const image = await this.service.updateMetadata(id, actor, dto);
+    return c.json({ data: toImageResponseDto(image) });
   };
 
-  remove: RequestHandler = async (request, response, next) => {
-    try {
-      const id = parseImageId(request.params.id);
-      await this.service.softDelete(id, this.actor(request));
-      response.json({ data: { id, deleted: true } });
-    } catch (error) {
-      next(error);
-    }
+  remove = async (c: Context) => {
+    const id = parseImageId(c.req.param('id'));
+    const actor = this.actor(c);
+    await this.service.softDelete(id, actor);
+    return c.json({ data: { id, deleted: true } });
   };
 }

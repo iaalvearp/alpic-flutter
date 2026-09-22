@@ -1,12 +1,11 @@
 import { AppError } from '../models/app-error.model.js';
-import type { JwtUser, JwtVerifier } from '../middleware/auth.middleware.js';
+import type { JwtUser } from '../middleware/auth.middleware.js';
 import type { AuthRepository } from '../repositories/auth.repository.js';
 import {
   AuthRepositoryError,
   SupabaseAuthRepository,
 } from '../repositories/auth.repository.js';
 import type { AuthSessionModel, UserModel } from '../models/user.model.js';
-import { UserRole } from '../models/user.model.js';
 
 export interface AuthServicePort {
   register(email: string, password: string): Promise<AuthSessionModel>;
@@ -65,13 +64,5 @@ export class AuthService implements AuthServicePort {
   }
 }
 
-export class SupabaseJwtVerifier implements JwtVerifier {
-  constructor(private readonly service: AuthServicePort) {}
-
-  verify(token: string): Promise<JwtUser> {
-    return this.service.verifyToken(token);
-  }
-}
-
-export const createDefaultAuthService = (): AuthService =>
-  new AuthService(new SupabaseAuthRepository());
+export const createDefaultAuthService = (client: any): AuthService =>
+  new AuthService(new SupabaseAuthRepository(client));

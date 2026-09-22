@@ -1,4 +1,3 @@
-import { env } from '../config/env.js';
 import {
   ExternalApiClientError,
   FetchExternalApiClient,
@@ -135,8 +134,8 @@ const parseResponse = (payload: unknown): OpenMeteoWeather => {
 export class OpenMeteoWeatherClient implements WeatherExternalClient {
   constructor(
     private readonly client: ExternalApiClient = new FetchExternalApiClient(
-      env.openMeteoBaseUrl,
-      env.externalApiTimeoutMs,
+      'https://api.open-meteo.com/v1/forecast',
+      5000,
     ),
   ) {}
 

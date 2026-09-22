@@ -1,5 +1,4 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import { getSupabaseClient } from '../config/supabase.js';
 import type { AuthSessionModel, UserModel } from '../models/user.model.js';
 import { UserRole } from '../models/user.model.js';
 
@@ -37,19 +36,10 @@ const toUserModel = (user: User): UserModel => ({
 });
 
 export class SupabaseAuthRepository implements AuthRepository {
-  private client?: SupabaseClient;
-
-  constructor(client?: SupabaseClient) {
-    this.client = client;
-  }
-
-  private get supabase(): SupabaseClient {
-    this.client ??= getSupabaseClient();
-    return this.client;
-  }
+  constructor(private readonly client: SupabaseClient) {}
 
   async register(email: string, password: string): Promise<UserModel> {
-    const { data, error } = await this.supabase.auth.admin.createUser({
+    const { data, error } = await this.client.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -64,7 +54,7 @@ export class SupabaseAuthRepository implements AuthRepository {
   }
 
   async login(email: string, password: string): Promise<AuthSessionModel> {
-    const { data, error } = await this.supabase.auth.signInWithPassword({
+    const { data, error } = await this.client.auth.signInWithPassword({
       email,
       password,
     });
@@ -81,7 +71,7 @@ export class SupabaseAuthRepository implements AuthRepository {
   }
 
   async getUserFromToken(token: string): Promise<UserModel> {
-    const { data, error } = await this.supabase.auth.getUser(token);
+    const { data, error } = await this.client.auth.getUser(token);
     if (error || !data.user) {
       throw new AuthRepositoryError('INVALID_TOKEN', error);
     }

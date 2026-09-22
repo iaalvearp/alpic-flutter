@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express';
+import type { Context } from 'hono';
 import { parseImageId } from '../dtos/image.dto.js';
 import {
   toWeatherResponseDto,
@@ -11,22 +11,19 @@ import type { WeatherServicePort } from '../services/weather.service.js';
 export class WeatherController {
   constructor(private readonly service: WeatherServicePort) {}
 
-  private actor(request: Parameters<RequestHandler>[0]): ImageActor {
-    const user = request.user;
+  private actor(c: Context): ImageActor {
+    const user = c.get('user');
     if (!user?.sub) {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
     return { id: user.sub, role: user.role ?? UserRole.USER };
   }
 
-  getForImage: RequestHandler = async (request, response, next) => {
-    try {
-      const id = parseImageId(request.params.id);
-      const weather = await this.service.getForImage(id, this.actor(request));
-      const result: WeatherResponseDto = toWeatherResponseDto(weather);
-      response.json({ data: result });
-    } catch (error) {
-      next(error);
-    }
+  getForImage = async (c: Context) => {
+    const id = parseImageId(c.req.param('id'));
+    const actor = this.actor(c);
+    const weather = await this.service.getForImage(id, actor);
+    const result: WeatherResponseDto = toWeatherResponseDto(weather);
+    return c.json({ data: result });
   };
 }

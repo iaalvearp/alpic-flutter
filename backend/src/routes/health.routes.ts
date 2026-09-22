@@ -1,8 +1,8 @@
-import { Router } from 'express';
-import { HealthController } from '../controllers/health.controller.js';
-import { HealthService } from '../services/health.service.js';
+import { Hono } from 'hono';
+import type { HealthController } from '../controllers/health.controller.js';
 
-const healthController = new HealthController(new HealthService());
-export const healthRouter = Router();
-
-healthRouter.get('/health', healthController.getHealth);
+export const createHealthRoutes = (controller: HealthController) => {
+  const app = new Hono();
+  app.get('/', (c) => controller.getHealth(c));
+  return app;
+};

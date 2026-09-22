@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express';
+import type { Context } from 'hono';
 import { AppError } from '../models/app-error.model.js';
 import {
   parseCredentialsDto,
@@ -11,48 +11,38 @@ import { UserRole } from '../models/user.model.js';
 export class AuthController {
   constructor(private readonly service: AuthServicePort) {}
 
-  register: RequestHandler = async (request, response, next) => {
-    try {
-      const credentials = parseCredentialsDto(request.body);
-      const session = await this.service.register(
-        credentials.email,
-        credentials.password,
-      );
-      response.status(201).json({ data: toAuthResponseDto(session) });
-    } catch (error) {
-      next(error);
-    }
+  register = async (c: Context) => {
+    const body = await c.req.json();
+    const credentials = parseCredentialsDto(body);
+    const session = await this.service.register(
+      credentials.email,
+      credentials.password,
+    );
+    return c.json({ data: toAuthResponseDto(session) }, 201);
   };
 
-  login: RequestHandler = async (request, response, next) => {
-    try {
-      const credentials = parseCredentialsDto(request.body);
-      const session = await this.service.login(
-        credentials.email,
-        credentials.password,
-      );
-      response.json({ data: toAuthResponseDto(session) });
-    } catch (error) {
-      next(error);
-    }
+  login = async (c: Context) => {
+    const body = await c.req.json();
+    const credentials = parseCredentialsDto(body);
+    const session = await this.service.login(
+      credentials.email,
+      credentials.password,
+    );
+    return c.json({ data: toAuthResponseDto(session) });
   };
 
-  me: RequestHandler = (request, response, next) => {
-    try {
-      const user = request.user;
-      if (!user) {
-        throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
-      }
-      response.json({
-        data: toUserResponseDto({
-          id: user.sub,
-          email: user.email ?? '',
-          createdAt: null,
-          role: user.role ?? UserRole.USER,
-        }),
-      });
-    } catch (error) {
-      next(error);
+  me = (c: Context) => {
+    const user = c.get('user');
+    if (!user) {
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
+    return c.json({
+      data: toUserResponseDto({
+        id: user.sub,
+        email: user.email ?? '',
+        createdAt: null,
+        role: user.role ?? UserRole.USER,
+      }),
+    });
   };
 }

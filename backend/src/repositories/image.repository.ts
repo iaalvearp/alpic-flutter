@@ -1,6 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { env } from '../config/env.js';
-import { getSupabaseClient } from '../config/supabase.js';
 import { ImageModel } from '../models/image.model.js';
 import { PersistenceError } from '../models/persistence-error.model.js';
 
@@ -38,42 +36,24 @@ export interface ImageRepository {
     ownerId?: string,
   ): Promise<ImageModel | null>;
   softDelete(id: string, deletedAt: Date, ownerId?: string): Promise<boolean>;
-  uploadFile(path: string, bytes: Buffer, contentType: string): Promise<void>;
+  uploadFile(path: string, bytes: Uint8Array, contentType: string): Promise<void>;
   removeFile(path: string): Promise<void>;
   publicUrl(path: string): string;
 }
 
 export class SupabaseImageRepository implements ImageRepository {
-  private client?: SupabaseClient;
-  private readonly bucketName: string;
-
-  constructor(client?: SupabaseClient, bucketName?: string);
-  constructor(bucketName?: string);
-
   constructor(
-    clientOrBucketName?: SupabaseClient | string,
-    bucketName = env.supabaseStorageBucket,
-  ) {
-    if (typeof clientOrBucketName === 'string') {
-      this.bucketName = clientOrBucketName;
-    } else {
-      this.client = clientOrBucketName;
-      this.bucketName = bucketName;
-    }
-  }
-
-  private get supabase(): SupabaseClient {
-    this.client ??= getSupabaseClient();
-    return this.client;
-  }
+    private readonly client: SupabaseClient,
+    private readonly bucketName: string,
+  ) {}
 
   async checkConnection(): Promise<void> {
-    const { error } = await this.supabase.from('images').select('id').limit(1);
+    const { error } = await this.client.from('images').select('id').limit(1);
     if (error) throw new PersistenceError('check Supabase connection', error);
   }
 
   async findVisibleByOwner(ownerId: string): Promise<ImageModel[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.client
       .from('images')
       .select(imageColumns)
       .eq('owner_id', ownerId)
@@ -87,7 +67,7 @@ export class SupabaseImageRepository implements ImageRepository {
   }
 
   async findAllVisible(): Promise<ImageModel[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.client
       .from('images')
       .select(imageColumns)
       .eq('is_visible', true)
@@ -100,7 +80,7 @@ export class SupabaseImageRepository implements ImageRepository {
   }
 
   async findById(id: string, ownerId?: string): Promise<ImageModel | null> {
-    let query = this.supabase
+    let query = this.client
       .from('images')
       .select(imageColumns)
       .eq('id', id)
@@ -115,7 +95,7 @@ export class SupabaseImageRepository implements ImageRepository {
   }
 
   async create(image: ImageModel): Promise<ImageModel> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.client
       .from('images')
       .insert(image.toRow())
       .select(imageColumns)
@@ -130,7 +110,7 @@ export class SupabaseImageRepository implements ImageRepository {
     values: Pick<ImageModel, 'name' | 'alt' | 'description' | 'updatedAt'>,
     ownerId?: string,
   ): Promise<ImageModel | null> {
-    let query = this.supabase
+    let query = this.client
       .from('images')
       .update({
         name: values.name,
@@ -154,7 +134,7 @@ export class SupabaseImageRepository implements ImageRepository {
     deletedAt: Date,
     ownerId?: string,
   ): Promise<boolean> {
-    let query = this.supabase
+    let query = this.client
       .from('images')
       .update({
         is_visible: false,
@@ -172,10 +152,10 @@ export class SupabaseImageRepository implements ImageRepository {
 
   async uploadFile(
     path: string,
-    bytes: Buffer,
+    bytes: Uint8Array,
     contentType: string,
   ): Promise<void> {
-    const { error } = await this.supabase.storage
+    const { error } = await this.client.storage
       .from(this.bucketName)
       .upload(path, bytes, { contentType, upsert: false });
 
@@ -183,7 +163,7 @@ export class SupabaseImageRepository implements ImageRepository {
   }
 
   async removeFile(path: string): Promise<void> {
-    const { error } = await this.supabase.storage
+    const { error } = await this.client.storage
       .from(this.bucketName)
       .remove([path]);
 
@@ -191,7 +171,7 @@ export class SupabaseImageRepository implements ImageRepository {
   }
 
   publicUrl(path: string): string {
-    return this.supabase.storage.from(this.bucketName).getPublicUrl(path).data
+    return this.client.storage.from(this.bucketName).getPublicUrl(path).data
       .publicUrl;
   }
 }

@@ -39,7 +39,7 @@ export interface CreateImageInput {
 }
 
 export interface ImageFile {
-  bytes: Buffer;
+  bytes: Uint8Array;
   contentType: string;
   extension: string;
 }

@@ -1,4 +1,3 @@
-import { env } from '../config/env.js';
 import type { HealthResponseDto } from '../dtos/health-response.dto.js';
 
 export class HealthService {
@@ -6,9 +5,9 @@ export class HealthService {
     return {
       status: 'ok',
       service: 'alpic-backend',
-      environment: env.nodeEnv,
+      environment: 'cloudflare-workers',
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()),
+      uptime: 0,
     };
   }
 }
