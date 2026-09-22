@@ -35,6 +35,7 @@ export class ImageService {
     const id = randomUUID();
     const extension = normalizeExtension(file.extension || input.extension);
     const storagePath = `${input.ownerId}/${id}.${extension}`;
+    console.log(`Uploading: ${storagePath}, size=${file.bytes.length}, type=${file.contentType}`);
     const now = new Date();
     const draft = new ImageModel({
       id,

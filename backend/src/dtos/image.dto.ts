@@ -119,6 +119,11 @@ export const parseCreateImageDto = async (
   const file = formData.get('file');
   if (!file || !(file instanceof File)) throw badRequest('file is required');
 
+  const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+  if (file.size > MAX_SIZE) {
+    throw badRequest('file exceeds the 10 MB size limit');
+  }
+
   const values: Record<string, unknown> = {};
   formData.forEach((value, key) => {
     if (key !== 'file') values[key] = value;

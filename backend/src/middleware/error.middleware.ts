@@ -30,11 +30,13 @@ export const errorHandler: ErrorHandler = (error, c) => {
   }
 
   if (error instanceof PersistenceError) {
+    console.error('Persistence error:', error.message, error.cause);
     return c.json(
       {
         error: {
           code: 'PERSISTENCE_ERROR',
           message: 'An internal storage error occurred',
+          details: error.cause instanceof Error ? error.cause.message : String(error.cause),
         },
       },
       500,
