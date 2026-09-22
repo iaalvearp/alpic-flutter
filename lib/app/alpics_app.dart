@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/auth_session.dart';
-import '../repositories/weather_repository.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../repositories/image_repository.dart';
@@ -25,7 +24,6 @@ class AlPicsApp extends StatefulWidget {
     this.authenticatedUserRole,
     this.authService,
     this.initialSession,
-    this.weatherRepository,
   });
 
   final LocationService? locationService;
@@ -38,7 +36,6 @@ class AlPicsApp extends StatefulWidget {
   final String? authenticatedUserRole;
   final ApiAuthService? authService;
   final AuthSession? initialSession;
-  final ImageWeatherRepository? weatherRepository;
 
   @override
   State<AlPicsApp> createState() => _AlPicsAppState();
@@ -92,7 +89,6 @@ class _AlPicsAppState extends State<AlPicsApp> {
                   imageLibrary: widget.imageLibrary,
                   startupMessage: widget.startupMessage,
                   imageRepository: widget.imageRepository,
-                  weatherRepository: widget.weatherRepository,
                   authenticatedUserId:
                       _session?.user.id ?? widget.authenticatedUserId,
                   authenticatedUserRole:

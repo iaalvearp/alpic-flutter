@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/image_record.dart';
 import '../repositories/image_repository.dart';
-import '../repositories/weather_repository.dart';
-import '../models/image_weather.dart';
+import '../services/location_service.dart';
 import '../services/prepared_image_library.dart';
+import '../utils/image_export.dart';
 import '../widgets/image_list_item.dart';
 import 'image_form_screen.dart';
 
@@ -13,24 +14,26 @@ class ImageListScreen extends StatefulWidget {
     required this.library,
     required this.imageRepository,
     required this.authenticatedUserId,
-    this.loadFailed = false,
-    this.weatherRepository,
     this.authenticatedUserRole,
+    this.locationService,
+    this.loadFailed = false,
     super.key,
   });
 
   final PreparedImageLibrary library;
   final ImageRepository? imageRepository;
   final String? authenticatedUserId;
-  final bool loadFailed;
-  final ImageWeatherRepository? weatherRepository;
   final String? authenticatedUserRole;
+  final LocationService? locationService;
+  final bool loadFailed;
 
   @override
   State<ImageListScreen> createState() => _ImageListScreenState();
 }
 
 class _ImageListScreenState extends State<ImageListScreen> {
+  final Set<String> _selectedKeys = {};
+
   bool _canManage(ImageRecord image) {
     if (image.uploadStatus != ImageUploadStatus.uploaded) return true;
     return image.isVisible &&
@@ -39,12 +42,20 @@ class _ImageListScreenState extends State<ImageListScreen> {
                 image.ownerId == widget.authenticatedUserId));
   }
 
+  String _identity(ImageRecord image) =>
+      image.id ?? '${image.originalFilename}-${image.createdAt.microsecondsSinceEpoch}';
+
+  bool get _selectionMode => _selectedKeys.isNotEmpty;
+
   Future<void> _edit(BuildContext context, ImageRecord image) async {
     if (!_canManage(image)) return;
     final updated = await Navigator.of(context).push<ImageRecord>(
       MaterialPageRoute<ImageRecord>(
-        builder: (context) =>
-            ImageFormScreen(record: image, mode: ImageFormMode.edit),
+        builder: (context) => ImageFormScreen(
+          record: image,
+          mode: ImageFormMode.edit,
+          locationService: widget.locationService,
+        ),
       ),
     );
     if (updated == null) return;
@@ -93,24 +104,6 @@ class _ImageListScreenState extends State<ImageListScreen> {
     }
   }
 
-  Future<void> _showWeather(ImageRecord image) async {
-    final repository = widget.weatherRepository;
-    if (repository == null || image.id == null) return;
-
-    try {
-      final weather = await repository.loadForImage(image.id!);
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => _WeatherDialog(weather: weather),
-      );
-    } catch (_) {
-      if (mounted) {
-        _showMessage('No fue posible consultar el clima de la imagen.');
-      }
-    }
-  }
-
   Future<void> _confirmSoftDelete(ImageRecord image) async {
     if (!_canManage(image) || image.id == null) return;
     final confirmed = await showDialog<bool>(
@@ -148,6 +141,80 @@ class _ImageListScreenState extends State<ImageListScreen> {
     }
   }
 
+  void _enterSelection(ImageRecord image) {
+    setState(() {
+      _selectedKeys.add(_identity(image));
+    });
+    _showMessage(
+      'Selección activada. Toca para elegir o quitar más imágenes.',
+    );
+  }
+
+  void _toggleSelection(ImageRecord image) {
+    setState(() {
+      final key = _identity(image);
+      if (!_selectedKeys.remove(key)) _selectedKeys.add(key);
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedKeys.isEmpty) return;
+    setState(_selectedKeys.clear);
+  }
+
+  Future<void> _confirmBatchDelete() async {
+    final images = _selectedImages();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar imágenes'),
+        content: Text(
+          '¿Quieres eliminar ${images.length} ${images.length == 1 ? 'imagen' : 'imágenes'}? El archivo no se eliminará permanentemente.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final repository = widget.imageRepository;
+    if (repository == null) return;
+    for (final image in images) {
+      if (image.id == null || !_canManage(image)) continue;
+      try {
+        await widget.library.softDelete(image, repository);
+      } catch (_) {
+        // Sigue con el resto y avisa al final.
+      }
+    }
+    if (!mounted) return;
+    setState(_selectedKeys.clear);
+    _showMessage('Imágenes eliminadas correctamente.');
+  }
+
+  List<ImageRecord> _selectedImages() {
+    final keys = _selectedKeys;
+    return widget.library.images
+        .where((image) => keys.contains(_identity(image)))
+        .toList();
+  }
+
+  Future<void> _openExportDialog(List<ImageRecord> images) async {
+    if (images.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _ExportJsonDialog(images: images),
+    );
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(
       context,
@@ -156,8 +223,41 @@ class _ImageListScreenState extends State<ImageListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selected = _selectedImages().length;
     return Scaffold(
-      appBar: AppBar(title: const Text('Imágenes preparadas')),
+      appBar: AppBar(
+        title: Text(
+          _selectionMode
+              ? '$selected ${selected == 1 ? 'seleccionada' : 'seleccionadas'}'
+              : 'Imágenes preparadas',
+        ),
+        leading: _selectionMode
+            ? IconButton(
+                key: const Key('cancelar-seleccion'),
+                tooltip: 'Salir de la selección',
+                onPressed: _clearSelection,
+                icon: const Icon(Icons.close),
+              )
+            : null,
+        actions: [
+          if (_selectionMode) ...[
+            IconButton(
+              key: const Key('exportar-seleccion'),
+              tooltip: 'Exportar JSON',
+              onPressed:
+                  selected == 0 ? null : () => _openExportDialog(_selectedImages()),
+              icon: const Icon(Icons.ios_share),
+            ),
+            IconButton(
+              key: const Key('eliminar-seleccion'),
+              tooltip: 'Eliminar seleccionadas',
+              onPressed:
+                  selected == 0 ? null : _confirmBatchDelete,
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        ],
+      ),
       body: AnimatedBuilder(
         animation: widget.library,
         builder: (context, child) {
@@ -183,20 +283,29 @@ class _ImageListScreenState extends State<ImageListScreen> {
               final canManage = _canManage(image);
               return ImageListItem(
                 image: image,
-                onTap: canManage ? () => _edit(context, image) : null,
+                onTap: _selectionMode
+                    ? () => _toggleSelection(image)
+                    : canManage
+                    ? () => _edit(context, image)
+                    : null,
+                onLongPress: () => _enterSelection(image),
+                selected: _selectedKeys.contains(_identity(image)),
+                selectionMode: _selectionMode,
                 onRetry:
                     image.uploadStatus == ImageUploadStatus.pending ||
                         image.uploadStatus == ImageUploadStatus.failed
                     ? () => _retry(image)
                     : null,
                 onDelete:
-                    canManage &&
+                    !_selectionMode &&
+                        canManage &&
                         image.uploadStatus == ImageUploadStatus.uploaded
                     ? () => _confirmSoftDelete(image)
                     : null,
-                onWeather: widget.weatherRepository == null
-                    ? null
-                    : () => _showWeather(image),
+                onExport:
+                    image.uploadStatus == ImageUploadStatus.uploaded
+                    ? () => _openExportDialog([image])
+                    : null,
               );
             },
           );
@@ -206,39 +315,58 @@ class _ImageListScreenState extends State<ImageListScreen> {
   }
 }
 
-class _WeatherDialog extends StatelessWidget {
-  const _WeatherDialog({required this.weather});
+class _ExportJsonDialog extends StatelessWidget {
+  const _ExportJsonDialog({required this.images});
 
-  final ImageWeather weather;
+  final List<ImageRecord> images;
+
+  bool get _isBatch => images.length > 1;
 
   @override
   Widget build(BuildContext context) {
+    final jsonText = exportJson(images);
     return AlertDialog(
-      title: const Text('Clima de la imagen'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Proveedor: ${weather.provider}'),
-          Text('Hora: ${weather.observedAt} (${weather.timezone})'),
-          const SizedBox(height: 12),
-          Text(
-            'Temperatura: ${weather.temperature.value} ${weather.temperature.unit}',
-          ),
-          Text(
-            'Sensación: ${weather.apparentTemperature.value} ${weather.apparentTemperature.unit}',
-          ),
-          Text(
-            'Humedad: ${weather.relativeHumidity.value} ${weather.relativeHumidity.unit}',
-          ),
-          Text(
-            'Precipitación: ${weather.precipitation.value} ${weather.precipitation.unit}',
-          ),
-          Text('Viento: ${weather.windSpeed.value} ${weather.windSpeed.unit}'),
-          Text('Código meteorológico: ${weather.weatherCode}'),
-        ],
+      title: Text(
+        _isBatch ? 'Exportar ${images.length} imágenes' : 'Exportar JSON',
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'El JSON contiene toda la información de la imagen.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  jsonText,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
+        TextButton.icon(
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: jsonText));
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('JSON copiado')));
+          },
+          icon: const Icon(Icons.copy),
+          label: const Text('Copiar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => shareExportFile(images),
+          icon: const Icon(Icons.save_alt),
+          label: const Text('Guardar / Compartir'),
+        ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cerrar'),

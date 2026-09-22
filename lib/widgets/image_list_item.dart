@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/image_record.dart';
@@ -7,17 +8,23 @@ class ImageListItem extends StatelessWidget {
   const ImageListItem({
     required this.image,
     this.onTap,
+    this.onLongPress,
     this.onRetry,
     this.onDelete,
-    this.onWeather,
+    this.onExport,
+    this.selected = false,
+    this.selectionMode = false,
     super.key,
   });
 
   final ImageRecord image;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback? onRetry;
   final VoidCallback? onDelete;
-  final VoidCallback? onWeather;
+  final VoidCallback? onExport;
+  final bool selected;
+  final bool selectionMode;
 
   String get _statusText => switch (image.uploadStatus) {
     ImageUploadStatus.pending ||
@@ -28,57 +35,83 @@ class ImageListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        onTap: image.uploadStatus == ImageUploadStatus.uploading ? null : onTap,
-        leading: ImagePreview(
-          file: image.localFile,
-          src: image.src,
-          compact: true,
+    final colorScheme = Theme.of(context).colorScheme;
+    final longPressEnabled =
+        image.uploadStatus != ImageUploadStatus.uploading &&
+        onLongPress != null;
+    return RawGestureDetector(
+      gestures: {
+        LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+          LongPressGestureRecognizer
+        >(
+          () => LongPressGestureRecognizer(
+            duration: const Duration(milliseconds: 1000),
+          ),
+          (recognizer) =>
+              recognizer.onLongPress = longPressEnabled ? onLongPress : null,
         ),
-        title: Text(image.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          '${image.alt}\n$_statusText',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+      },
+      child: Card(
+        color: selected ? colorScheme.primaryContainer : null,
+        child: ListTile(
+          onTap:
+              image.uploadStatus == ImageUploadStatus.uploading ? null : onTap,
+          leading: ImagePreview(
+            file: image.localFile,
+            src: image.src,
+            compact: true,
+          ),
+          title: Text(image.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '${image.alt}\n$_statusText',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          isThreeLine: true,
+          trailing: image.uploadStatus == ImageUploadStatus.uploading
+              ? const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : selectionMode
+              ? Icon(
+                  selected
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  color: selected ? colorScheme.primary : null,
+                )
+              : onRetry != null
+              ? IconButton(
+                  key: Key('retry-${image.id ?? image.originalFilename}'),
+                  tooltip: 'Reintentar subida',
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                )
+              : onDelete != null || onExport != null || onTap != null
+              ? PopupMenuButton<String>(
+                  tooltip: 'Acciones de imagen',
+                  onSelected: (action) {
+                    if (action == 'edit') onTap?.call();
+                    if (action == 'delete') onDelete?.call();
+                    if (action == 'export') onExport?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onTap != null)
+                      const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                    if (onExport != null)
+                      const PopupMenuItem(
+                        value: 'export',
+                        child: Text('Exportar JSON'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Quitar imagen'),
+                      ),
+                  ],
+                )
+              : const Icon(Icons.chevron_right),
         ),
-        isThreeLine: true,
-        trailing: image.uploadStatus == ImageUploadStatus.uploading
-            ? const SizedBox.square(
-                dimension: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : onRetry != null
-            ? IconButton(
-                key: Key('retry-${image.id ?? image.originalFilename}'),
-                tooltip: 'Reintentar subida',
-                onPressed: onRetry,
-                icon: const Icon(Icons.cloud_upload_outlined),
-              )
-            : onDelete != null || onWeather != null
-            ? PopupMenuButton<String>(
-                tooltip: 'Acciones de imagen',
-                onSelected: (action) {
-                  if (action == 'edit') onTap?.call();
-                  if (action == 'delete') onDelete?.call();
-                  if (action == 'weather') onWeather?.call();
-                },
-                itemBuilder: (context) => [
-                  if (onTap != null)
-                    const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                  if (onDelete != null)
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Quitar imagen'),
-                    ),
-                  if (onWeather != null)
-                    const PopupMenuItem(
-                      value: 'weather',
-                      child: Text('Consultar clima'),
-                    ),
-                ],
-              )
-            : const Icon(Icons.chevron_right),
       ),
     );
   }

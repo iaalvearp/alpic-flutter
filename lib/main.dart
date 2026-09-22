@@ -4,7 +4,6 @@ import 'app/alpics_app.dart';
 import 'config/api_config.dart';
 import 'models/auth_session.dart';
 import 'repositories/rest_image_repository.dart';
-import 'repositories/weather_repository.dart';
 import 'services/api_auth_service.dart';
 import 'services/api_client.dart';
 
@@ -32,7 +31,6 @@ Future<void> main() async {
       startupMessage: startupMessage,
       initialSession: session,
       imageRepository: RestImageRepository(apiClient),
-      weatherRepository: RestImageWeatherRepository(apiClient),
       authenticatedUserId: session?.user.id,
       authenticatedUserRole: session?.user.role,
     ),
