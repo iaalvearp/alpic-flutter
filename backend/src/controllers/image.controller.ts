@@ -22,15 +22,6 @@ export class ImageController {
 
   create = async (c: Context) => {
     const formData = await c.req.formData();
-    const file = formData.get('file');
-    console.log('Upload attempt:', {
-      hasFile: !!file,
-      isFileInstance: file instanceof File,
-      fileName: file && typeof file === 'object' && 'name' in file ? (file as File).name : 'none',
-      fileSize: file && typeof file === 'object' && 'size' in file ? (file as File).size : 'none',
-      fileType: file && typeof file === 'object' && 'type' in file ? (file as File).type : 'none',
-      formDataKeys: Array.from(formData.keys()),
-    });
     const actor = this.actor(c);
     const { input, file: parsedFile } = await parseCreateImageDto(formData, actor.id);
     const image = await this.service.create(input, parsedFile);

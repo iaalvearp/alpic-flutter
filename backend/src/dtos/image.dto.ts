@@ -40,6 +40,7 @@ const badRequest = (message: string): AppError =>
 
 const supportedExtensions = new Set([
   'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'tif', 'tiff',
+  'avif', 'svg', 'ico', 'jfif',
 ]);
 
 const recordBody = (body: unknown): Record<string, unknown> => {
