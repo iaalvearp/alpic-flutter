@@ -17,18 +17,24 @@ export const createCorsMiddleware = (env: AppEnv): MiddlewareHandler => {
       );
     }
 
+    const headers: Record<string, string> = {};
+
     if (origin) {
-      const allowed = origins.includes('*') ? origin : (origins.includes(origin) ? origin : origin);
-      c.header('Access-Control-Allow-Origin', allowed);
+      headers['Access-Control-Allow-Origin'] = origins.includes('*') ? '*' : origin;
+      headers['Vary'] = 'Origin';
     }
 
-    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    c.header('Access-Control-Expose-Headers', 'Content-Length');
-    c.header('Access-Control-Max-Age', '86400');
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+    headers['Access-Control-Expose-Headers'] = 'Content-Length';
+    headers['Access-Control-Max-Age'] = '86400';
 
     if (c.req.method === 'OPTIONS') {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers });
+    }
+
+    for (const [key, value] of Object.entries(headers)) {
+      c.header(key, value);
     }
 
     await next();
