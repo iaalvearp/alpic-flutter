@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:alpic_flutter/models/auth_session.dart';
 import 'package:alpic_flutter/screens/login_screen.dart';
+import 'package:alpic_flutter/screens/register_screen.dart';
 import 'package:alpic_flutter/services/api_auth_service.dart';
 import 'package:alpic_flutter/services/api_client.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,64 @@ void main() {
 
     expect(session?.user.id, 'user-1');
     expect(tokenStore.value, 'jwt-token');
+  });
+
+  testWidgets('el login muestra el logo y el enlace para crear una cuenta', (
+    tester,
+  ) async {
+    final authService = ApiAuthService(
+      ApiClient(
+        baseUrl: 'http://api.test',
+        httpClient: _LoginHttpClient(),
+        tokenStore: _MemoryTokenStore(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LoginScreen(
+          authService: authService,
+          onAuthenticated: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byKey(const Key('boton-crear-cuenta')), findsOneWidget);
+    expect(find.text('¿No tienes cuenta? Crea una'), findsOneWidget);
+  });
+
+  testWidgets('el registro valida que las contraseñas coincidan', (
+    tester,
+  ) async {
+    final authService = ApiAuthService(
+      ApiClient(
+        baseUrl: 'http://api.test',
+        httpClient: _LoginHttpClient(),
+        tokenStore: _MemoryTokenStore(),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: RegisterScreen(authService: authService)),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('campo-email-registro')),
+      'new@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const Key('campo-password-registro')),
+      'correct-password',
+    );
+    await tester.enterText(
+      find.byKey(const Key('campo-password-confirmacion')),
+      'different-password',
+    );
+    await tester.tap(find.byKey(const Key('boton-registro')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Las contraseñas no coinciden.'), findsOneWidget);
   });
 }
 

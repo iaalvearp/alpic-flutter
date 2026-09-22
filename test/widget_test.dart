@@ -62,6 +62,26 @@ void main() {
     expect(find.text('AlPics'), findsOneWidget);
   });
 
+  testWidgets('el perfil muestra el correo y ofrece cerrar sesión', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      AlPicsApp(
+        locationService: _FakeLocationService.denied(),
+        authenticatedUserId: 'owner-123',
+        authenticatedUserEmail: 'user@example.com',
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('boton-perfil')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('perfil-email')), findsOneWidget);
+    expect(find.text('user@example.com'), findsOneWidget);
+    expect(find.byKey(const Key('boton-cerrar-sesion')), findsOneWidget);
+  });
+
   testWidgets('la carga inicial reemplaza la lista local sin duplicados', (
     tester,
   ) async {

@@ -22,6 +22,7 @@ class AlPicsApp extends StatefulWidget {
     this.imageRepository,
     this.authenticatedUserId,
     this.authenticatedUserRole,
+    this.authenticatedUserEmail,
     this.authService,
     this.initialSession,
   });
@@ -34,6 +35,7 @@ class AlPicsApp extends StatefulWidget {
   final ImageRepository? imageRepository;
   final String? authenticatedUserId;
   final String? authenticatedUserRole;
+  final String? authenticatedUserEmail;
   final ApiAuthService? authService;
   final AuthSession? initialSession;
 
@@ -58,6 +60,18 @@ class _AlPicsAppState extends State<AlPicsApp> {
   void dispose() {
     if (_ownsThemeController) _themeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleLogout() async {
+    final authService = widget.authService;
+    if (authService != null) {
+      try {
+        await authService.logout();
+      } catch (_) {
+        // La sesión local se cierra igualmente aunque falle la API.
+      }
+    }
+    if (mounted) setState(() => _session = null);
   }
 
   @override
@@ -93,6 +107,9 @@ class _AlPicsAppState extends State<AlPicsApp> {
                       _session?.user.id ?? widget.authenticatedUserId,
                   authenticatedUserRole:
                       _session?.user.role ?? widget.authenticatedUserRole,
+                  authenticatedUserEmail:
+                      _session?.user.email ?? widget.authenticatedUserEmail,
+                  onLogout: _handleLogout,
                 ),
         );
       },

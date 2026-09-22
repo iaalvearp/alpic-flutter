@@ -23,6 +23,8 @@ class HomeScreen extends StatefulWidget {
     this.imageRepository,
     this.authenticatedUserId,
     this.authenticatedUserRole,
+    this.authenticatedUserEmail,
+    this.onLogout,
     super.key,
   });
 
@@ -34,6 +36,8 @@ class HomeScreen extends StatefulWidget {
   final ImageRepository? imageRepository;
   final String? authenticatedUserId;
   final String? authenticatedUserRole;
+  final String? authenticatedUserEmail;
+  final VoidCallback? onLogout;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -210,6 +214,62 @@ class _HomeScreenState extends State<HomeScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _showProfile() {
+    final email = widget.authenticatedUserEmail;
+    final role = widget.authenticatedUserRole ?? 'USER';
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    child: Icon(Icons.person_outline),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          email ?? 'Usuario',
+                          key: const Key('perfil-email'),
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          role,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                key: const Key('boton-cerrar-sesion'),
+                onPressed: widget.onLogout == null
+                    ? null
+                    : () {
+                        Navigator.of(context).pop();
+                        widget.onLogout!();
+                      },
+                icon: const Icon(Icons.logout),
+                label: const Text('Cerrar sesión'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openPreparedImages() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -231,6 +291,12 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('AlPics'),
         actions: [
+          IconButton(
+            key: const Key('boton-perfil'),
+            tooltip: 'Perfil',
+            onPressed: _showProfile,
+            icon: const Icon(Icons.person_outline),
+          ),
           PopupMenuButton<ThemeMode>(
             key: const Key('selector-tema'),
             tooltip: 'Cambiar tema',

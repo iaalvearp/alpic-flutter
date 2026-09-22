@@ -33,6 +33,7 @@ Future<void> main() async {
       imageRepository: RestImageRepository(apiClient),
       authenticatedUserId: session?.user.id,
       authenticatedUserRole: session?.user.role,
+      authenticatedUserEmail: session?.user.email,
     ),
   );
 }
