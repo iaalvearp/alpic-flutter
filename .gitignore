@@ -56,3 +56,6 @@ app.*.map.json
 !.dev.vars.example
 .env*
 !.env.example
+
+# Documento de resumen técnico (no versionado)
+resumen_proyecto.md
